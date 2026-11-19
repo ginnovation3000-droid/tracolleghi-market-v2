@@ -115,6 +115,17 @@ function buildThreadKey(annuncioId, userA, userB) {
   return `${annuncioId}__${pair[0]}__${pair[1]}`;
 }
 
+function isAnnuncioVenduto(item) {
+  return Boolean(item?.venduto) || /\[venduto\]/i.test(item?.descrizione || '');
+}
+
+function cleanDescrizione(desc) {
+  return (desc || '')
+    .replace(/\s*\[WELFARE OK\]\s*/gi, ' ')
+    .replace(/\s*\[VENDUTO\]\s*/gi, ' ')
+    .trim();
+}
+
 export default function App() {
   useEffect(() => {
     const link = document.createElement('link');
@@ -161,7 +172,7 @@ export default function App() {
   });
   const [showProfileModal, setShowProfileModal] = useState(false);
 
-  // Impostazioni
+  // Impostazioni & Gestione I miei annunci
   const [settings, setSettings] = useState(() => {
     try {
       return (
@@ -176,6 +187,20 @@ export default function App() {
     }
   });
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [settingsTab, setSettingsTab] = useState('miei_annunci'); // 'miei_annunci' | 'preferenze'
+
+  // Modifica annuncio da "I miei annunci"
+  const [annuncioInModifica, setAnnuncioInModifica] = useState(null);
+  const [editForm, setEditForm] = useState({
+    titolo: '',
+    categoria: 'Motori',
+    tipo: 'In vendita',
+    prezzo: '',
+    welfare: false,
+    venduto: false,
+    descrizione: '',
+  });
+  const [salvataggioModifica, setSalvataggioModifica] = useState(false);
 
   // Annunci e filtri
   const [annunci, setAnnunci] = useState([]);
@@ -196,7 +221,7 @@ export default function App() {
   const [errore, setErrore] = useState('');
   const [avviso, setAvviso] = useState('');
 
-  // Modali
+  // Modali eliminazione & chat
   const [annuncioDaEliminare, setAnnuncioDaEliminare] = useState(null);
   const [chatAperta, setChatAperta] = useState(null);
   const [messaggi, setMessaggi] = useState([]);
@@ -224,6 +249,7 @@ export default function App() {
       if (e.key === 'Escape') {
         setShowProfileModal(false);
         setShowSettingsModal(false);
+        setAnnuncioInModifica(null);
         setAnnuncioDaEliminare(null);
         setChatAperta(null);
       }
@@ -410,6 +436,126 @@ export default function App() {
       setErrore('Errore durante il salvataggio: ' + err.message);
     } finally {
       setLoading(false);
+    }
+  }
+
+  // I miei annunci (filtrati sul profilo attuale)
+  const mieiAnnunci = useMemo(() => {
+    if (!userProfile.nome || !userProfile.nome.trim()) return [];
+    const mioNome = userProfile.nome.trim().toLowerCase();
+    return annunci.filter((item) =>
+      String(item.autore || '')
+        .trim()
+        .toLowerCase()
+        .startsWith(mioNome)
+    );
+  }, [annunci, userProfile.nome]);
+
+  function apriModificaAnnuncio(item) {
+    const isWelfare = Boolean(item.welfare) || /\[welfare ok\]/i.test(item.descrizione || '');
+    const isVenduto = isAnnuncioVenduto(item);
+    const tipoRilevato =
+      item.tipo ||
+      (item.prezzo === 0 || /\[in regalo\]/i.test(item.descrizione || '')
+        ? 'In regalo'
+        : /\[a noleggio\]/i.test(item.descrizione || '')
+        ? 'A noleggio'
+        : 'In vendita');
+
+    setAnnuncioInModifica(item);
+    setEditForm({
+      titolo: item.titolo || '',
+      categoria: CATEGORIE_FORM.includes(item.categoria) ? item.categoria : 'Generale',
+      tipo: tipoRilevato,
+      prezzo: item.prezzo != null ? String(item.prezzo) : '',
+      welfare: isWelfare,
+      venduto: isVenduto,
+      descrizione: cleanDescrizione(item.descrizione),
+    });
+  }
+
+  async function handleSalvaModificaAnnuncio(e) {
+    e.preventDefault();
+    if (!annuncioInModifica) return;
+    if (!editForm.titolo.trim() || !editForm.descrizione.trim()) {
+      setErrore('Compila titolo e descrizione per aggiornare l’annuncio.');
+      return;
+    }
+
+    setSalvataggioModifica(true);
+    setErrore('');
+
+    const prezzoNum =
+      editForm.tipo === 'In regalo'
+        ? 0
+        : editForm.prezzo !== '' && !Number.isNaN(parseFloat(editForm.prezzo))
+        ? parseFloat(editForm.prezzo)
+        : null;
+
+    const tags = [
+      editForm.welfare && editForm.tipo !== 'In regalo' ? '[WELFARE OK]' : '',
+      editForm.venduto ? '[VENDUTO]' : '',
+    ]
+      .filter(Boolean)
+      .join(' ');
+
+    const descrizioneFinale = tags ? `${editForm.descrizione.trim()} ${tags}` : editForm.descrizione.trim();
+
+    const updates = {
+      titolo: editForm.titolo.trim(),
+      categoria: editForm.categoria,
+      tipo: editForm.tipo,
+      prezzo: prezzoNum,
+      welfare: editForm.tipo !== 'In regalo' ? editForm.welfare : false,
+      descrizione: descrizioneFinale,
+    };
+
+    try {
+      const { error } = await supabase.from('annunci').update(updates).eq('id', annuncioInModifica.id);
+      if (error) throw error;
+
+      setAnnunci((prev) =>
+        prev.map((a) => (a.id === annuncioInModifica.id ? { ...a, ...updates } : a))
+      );
+      setAnnuncioInModifica(null);
+      setAvviso('Annuncio aggiornato correttamente!');
+      setTimeout(() => setAvviso(''), 3000);
+    } catch (err) {
+      setErrore('Errore durante la modifica: ' + err.message);
+    } finally {
+      setSalvataggioModifica(false);
+    }
+  }
+
+  async function toggleStatoVenduto(item) {
+    const attualmenteVenduto = isAnnuncioVenduto(item);
+    const nuovoStatoVenduto = !attualmenteVenduto;
+    const isWelfare = Boolean(item.welfare) || /\[welfare ok\]/i.test(item.descrizione || '');
+    const baseDesc = cleanDescrizione(item.descrizione);
+
+    const tags = [
+      isWelfare ? '[WELFARE OK]' : '',
+      nuovoStatoVenduto ? '[VENDUTO]' : '',
+    ]
+      .filter(Boolean)
+      .join(' ');
+
+    const descrizioneFinale = tags ? `${baseDesc} ${tags}` : baseDesc;
+
+    try {
+      const { error } = await supabase
+        .from('annunci')
+        .update({ descrizione: descrizioneFinale })
+        .eq('id', item.id);
+      if (error) throw error;
+
+      setAnnunci((prev) =>
+        prev.map((a) => (a.id === item.id ? { ...a, descrizione: descrizioneFinale } : a))
+      );
+      setAvviso(nuovoStatoVenduto ? 'Annuncio segnato come VENDUTO!' : 'Annuncio rimesso in bacheca come disponibile.');
+      setTimeout(() => setAvviso(''), 3000);
+    } catch (err) {
+      setErrore('Impossibile aggiornare lo stato: ' + err.message);
     }
   }
 
@@ -704,9 +850,12 @@ export default function App() {
 
             <button
               type="button"
-              aria-label="Impostazioni"
-              title="Impostazioni"
-              onClick={() => setShowSettingsModal(true)}
+              aria-label="Impostazioni e I miei annunci"
+              title="Impostazioni & I miei annunci"
+              onClick={() => {
+                setSettingsTab('miei_annunci');
+                setShowSettingsModal(true);
+              }}
               style={{
                 width: '40px',
                 height: '40px',
@@ -719,9 +868,32 @@ export default function App() {
                 display: 'inline-flex',
                 alignItems: 'center',
                 justifyContent: 'center',
+                position: 'relative',
               }}
             >
               ⚙️
+              {mieiAnnunci.length > 0 && (
+                <span
+                  style={{
+                    position: 'absolute',
+                    top: '-3px',
+                    right: '-3px',
+                    background: '#22c55e',
+                    color: '#fff',
+                    fontSize: '0.68rem',
+                    fontWeight: 800,
+                    minWidth: '18px',
+                    height: '18px',
+                    borderRadius: '999px',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    border: '2px solid #1b365d',
+                  }}
+                >
+                  {mieiAnnunci.length}
+                </span>
+              )}
             </button>
           </div>
         </div>
@@ -1089,7 +1261,8 @@ export default function App() {
             annunciFiltrati.map((item) => {
               const foto = normalizeImages(item);
               const isWelfare = Boolean(item.welfare) || /\[welfare ok\]/i.test(item.descrizione || '');
-              const descrizionePulita = (item.descrizione || '').replace(/\s*\[WELFARE OK\]\s*/gi, '').trim();
+              const venduto = isAnnuncioVenduto(item);
+              const descrizionePulita = cleanDescrizione(item.descrizione);
               const isOwner =
                 userProfile.nome &&
                 String(item.autore || '')
@@ -1108,12 +1281,15 @@ export default function App() {
                     display: 'flex',
                     flexDirection: 'column',
                     justifyContent: 'space-between',
+                    opacity: venduto ? 0.85 : 1,
+                    border: venduto ? '1px solid #fecaca' : '1px solid transparent',
                   }}
                 >
                   <div>
                     {foto.length > 0 && (
                       <div
                         style={{
+                          position: 'relative',
                           display: 'grid',
                           gridTemplateColumns: foto.length === 1 ? '1fr' : 'repeat(2, 1fr)',
                           gap: '2px',
@@ -1130,9 +1306,29 @@ export default function App() {
                               height: foto.length === 1 ? '185px' : '94px',
                               objectFit: 'cover',
                               display: 'block',
+                              filter: venduto ? 'grayscale(45%)' : 'none',
                             }}
                           />
                         ))}
+                        {venduto && (
+                          <span
+                            style={{
+                              position: 'absolute',
+                              top: '10px',
+                              left: '10px',
+                              background: '#dc2626',
+                              color: '#fff',
+                              fontFamily: fontHeading,
+                              fontWeight: 800,
+                              fontSize: '0.76rem',
+                              padding: '4px 10px',
+                              borderRadius: '8px',
+                              letterSpacing: '0.04em',
+                            }}
+                          >
+                            VENDUTO
+                          </span>
+                        )}
                       </div>
                     )}
 
@@ -1176,9 +1372,31 @@ export default function App() {
                               🎟️ Welfare OK
                             </span>
                           )}
+                          {venduto && foto.length === 0 && (
+                            <span
+                              style={{
+                                fontFamily: fontHeading,
+                                fontSize: '0.72rem',
+                                fontWeight: 800,
+                                background: '#fee2e2',
+                                color: '#b91c1c',
+                                padding: '3px 9px',
+                                borderRadius: '999px',
+                              }}
+                            >
+                              VENDUTO
+                            </span>
+                          )}
                         </div>
 
-                        <span style={{ fontWeight: 700, color: '#0f766e', fontSize: '0.94rem' }}>
+                        <span
+                          style={{
+                            fontWeight: 700,
+                            color: venduto ? '#94a3b8' : '#0f766e',
+                            textDecoration: venduto ? 'line-through' : 'none',
+                            fontSize: '0.94rem',
+                          }}
+                        >
                           {item.tipo === 'In regalo' || item.prezzo === 0
                             ? 'IN REGALO'
                             : item.prezzo != null
@@ -1227,7 +1445,7 @@ export default function App() {
                     </div>
 
                     <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
-                      {!isOwner && item.autore && (
+                      {!isOwner && item.autore && !venduto && (
                         <button
                           type="button"
                           onClick={() => apriChatPrivata(item, item.autore)}
@@ -1249,19 +1467,22 @@ export default function App() {
                       {isOwner && (
                         <button
                           type="button"
-                          onClick={() => setAnnuncioDaEliminare(item)}
+                          onClick={() => {
+                            setSettingsTab('miei_annunci');
+                            setShowSettingsModal(true);
+                          }}
                           style={{
-                            background: '#fee2e2',
-                            color: '#b91c1c',
-                            border: 'none',
+                            background: '#f1f5f9',
+                            color: '#334155',
+                            border: '1px solid #e2e8f0',
                             borderRadius: '9px',
-                            padding: '6px 10px',
-                            fontSize: '0.8rem',
+                            padding: '5px 9px',
+                            fontSize: '0.75rem',
                             fontWeight: 600,
                             cursor: 'pointer',
                           }}
                         >
-                          Elimina
+                          Tuo annuncio
                         </button>
                       )}
                     </div>
@@ -1284,7 +1505,7 @@ export default function App() {
             alignItems: 'center',
             justifyContent: 'center',
             padding: '16px',
-            zIndex: 50,
+            zIndex: 70,
           }}
         >
           <div style={{ background: '#fff', borderRadius: '16px', padding: '22px', maxWidth: '380px', width: '100%' }}>
@@ -1460,7 +1681,7 @@ export default function App() {
         </div>
       )}
 
-      {/* MODALE IMPOSTAZIONI */}
+      {/* MODALE IMPOSTAZIONI & I MIEI ANNUNCI */}
       {showSettingsModal && (
         <div
           style={{
@@ -1471,67 +1692,262 @@ export default function App() {
             alignItems: 'center',
             justifyContent: 'center',
             padding: '16px',
-            zIndex: 50,
+            zIndex: 55,
           }}
         >
           <div
             style={{
               background: '#fff',
-              borderRadius: '16px',
+              borderRadius: '18px',
               padding: '22px',
-              maxWidth: '400px',
+              maxWidth: '540px',
               width: '100%',
+              maxHeight: '85vh',
               display: 'flex',
               flexDirection: 'column',
               gap: '14px',
+              overflow: 'hidden',
             }}
           >
-            <h3 style={{ margin: 0, fontFamily: fontHeading }}>⚙️ Impostazioni</h3>
-
-            <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontWeight: 600 }}>
-              <span>Suoni e notifiche</span>
-              <input
-                type="checkbox"
-                checked={settings.notificheAttive}
-                onChange={(e) => setSettings((prev) => ({ ...prev, notificheAttive: e.target.checked }))}
-              />
-            </label>
-
-            <div>
-              <label style={{ display: 'block', fontWeight: 600, marginBottom: '6px' }}>Suoneria notifica</label>
-              <select
-                value={settings.suoneria}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setSettings((prev) => ({ ...prev, suoneria: val }));
-                  playNotificationSound(val);
-                }}
-                style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', border: '1px solid #cbd5e1' }}
-              >
-                {SUONERIE.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ margin: 0, fontFamily: fontHeading, color: '#1b365d' }}>⚙️ Impostazioni & Gestione</h3>
               <button
                 type="button"
-                onClick={() => setSettings((prev) => ({ ...prev, badgeNonLetti: 0 }))}
+                onClick={() => setShowSettingsModal(false)}
+                style={{ background: 'transparent', border: 'none', fontSize: '1.15rem', cursor: 'pointer', color: '#64748b' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Schede navigazione: I miei annunci | Preferenze */}
+            <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid #e2e8f0', paddingBottom: '10px' }}>
+              <button
+                type="button"
+                onClick={() => setSettingsTab('miei_annunci')}
                 style={{
-                  padding: '8px 12px',
+                  padding: '8px 14px',
                   borderRadius: '10px',
-                  border: '1px solid #cbd5e1',
-                  background: '#f8fafc',
+                  border: 'none',
+                  fontFamily: fontHeading,
+                  fontWeight: 700,
                   fontSize: '0.84rem',
                   cursor: 'pointer',
+                  background: settingsTab === 'miei_annunci' ? '#1b365d' : '#f1f5f9',
+                  color: settingsTab === 'miei_annunci' ? '#fff' : '#334155',
                 }}
               >
-                Azzera badge icona
+                📋 I miei annunci ({mieiAnnunci.length})
               </button>
+              <button
+                type="button"
+                onClick={() => setSettingsTab('preferenze')}
+                style={{
+                  padding: '8px 14px',
+                  borderRadius: '10px',
+                  border: 'none',
+                  fontFamily: fontHeading,
+                  fontWeight: 700,
+                  fontSize: '0.84rem',
+                  cursor: 'pointer',
+                  background: settingsTab === 'preferenze' ? '#1b365d' : '#f1f5f9',
+                  color: settingsTab === 'preferenze' ? '#fff' : '#334155',
+                }}
+              >
+                🔔 Notifiche & Suoni
+              </button>
+            </div>
 
+            {settingsTab === 'miei_annunci' ? (
+              <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px', paddingRight: '2px' }}>
+                {!userProfile.registrato || !userProfile.nome ? (
+                  <p style={{ color: '#64748b', fontSize: '0.9rem', textAlign: 'center', margin: '18px 0' }}>
+                    Accedi prima con Badge o Mail aziendale per vedere e gestire i tuoi annunci.
+                  </p>
+                ) : mieiAnnunci.length === 0 ? (
+                  <p style={{ color: '#64748b', fontSize: '0.9rem', textAlign: 'center', margin: '18px 0' }}>
+                    Non hai ancora pubblicato nessun annuncio.
+                  </p>
+                ) : (
+                  mieiAnnunci.map((item) => {
+                    const venduto = isAnnuncioVenduto(item);
+                    const foto = normalizeImages(item);
+                    return (
+                      <div
+                        key={item.id}
+                        style={{
+                          border: venduto ? '1px solid #fecaca' : '1px solid #e2e8f0',
+                          background: venduto ? '#fff5f5' : '#f8fafc',
+                          borderRadius: '12px',
+                          padding: '12px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '10px',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          {foto[0] ? (
+                            <img
+                              src={foto[0]}
+                              alt={item.titolo}
+                              style={{ width: '48px', height: '48px', borderRadius: '8px', objectFit: 'cover', flexShrink: 0 }}
+                            />
+                          ) : (
+                            <div
+                              style={{
+                                width: '48px',
+                                height: '48px',
+                                borderRadius: '8px',
+                                background: '#e2e8f0',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                fontSize: '1.1rem',
+                                flexShrink: 0,
+                              }}
+                            >
+                              📦
+                            </div>
+                          )}
+
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                              <strong style={{ fontSize: '0.95rem', color: '#0f172a' }}>{item.titolo}</strong>
+                              {venduto && (
+                                <span
+                                  style={{
+                                    background: '#dc2626',
+                                    color: '#fff',
+                                    fontSize: '0.68rem',
+                                    fontWeight: 800,
+                                    padding: '2px 7px',
+                                    borderRadius: '6px',
+                                  }}
+                                >
+                                  VENDUTO
+                                </span>
+                              )}
+                            </div>
+                            <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '2px' }}>
+                              {item.categoria} •{' '}
+                              {item.tipo === 'In regalo' || item.prezzo === 0
+                                ? 'In regalo'
+                                : item.prezzo != null
+                                ? `€ ${item.prezzo}`
+                                : item.tipo}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                          <button
+                            type="button"
+                            onClick={() => toggleStatoVenduto(item)}
+                            style={{
+                              flex: '1 1 auto',
+                              padding: '7px 10px',
+                              borderRadius: '9px',
+                              border: 'none',
+                              background: venduto ? '#059669' : '#f59e0b',
+                              color: '#fff',
+                              fontWeight: 700,
+                              fontSize: '0.78rem',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            {venduto ? '↩️ Rimetto disponibile' : '✅ Segna Venduto'}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => apriModificaAnnuncio(item)}
+                            style={{
+                              flex: '1 1 auto',
+                              padding: '7px 10px',
+                              borderRadius: '9px',
+                              border: '1px solid #cbd5e1',
+                              background: '#fff',
+                              color: '#1e293b',
+                              fontWeight: 700,
+                              fontSize: '0.78rem',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            ✏️ Modifica
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setAnnuncioDaEliminare(item)}
+                            style={{
+                              padding: '7px 10px',
+                              borderRadius: '9px',
+                              border: 'none',
+                              background: '#fee2e2',
+                              color: '#b91c1c',
+                              fontWeight: 700,
+                              fontSize: '0.78rem',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            🗑️ Elimina
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontWeight: 600 }}>
+                  <span>Suoni e notifiche</span>
+                  <input
+                    type="checkbox"
+                    checked={settings.notificheAttive}
+                    onChange={(e) => setSettings((prev) => ({ ...prev, notificheAttive: e.target.checked }))}
+                  />
+                </label>
+
+                <div>
+                  <label style={{ display: 'block', fontWeight: 600, marginBottom: '6px' }}>Suoneria notifica</label>
+                  <select
+                    value={settings.suoneria}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setSettings((prev) => ({ ...prev, suoneria: val }));
+                      playNotificationSound(val);
+                    }}
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', border: '1px solid #cbd5e1' }}
+                  >
+                    {SUONERIE.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => setSettings((prev) => ({ ...prev, badgeNonLetti: 0 }))}
+                    style={{
+                      padding: '8px 12px',
+                      borderRadius: '10px',
+                      border: '1px solid #cbd5e1',
+                      background: '#f8fafc',
+                      fontSize: '0.84rem',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Azzera badge icona
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #e2e8f0', paddingTop: '10px' }}>
               <button
                 type="button"
                 onClick={() => setShowSettingsModal(false)}
@@ -1545,10 +1961,180 @@ export default function App() {
                   cursor: 'pointer',
                 }}
               >
-                Fatto
+                Chiudi
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* MODALE MODIFICA ANNUNCIO (APERTO DA "I MIEI ANNUNCI") */}
+      {annuncioInModifica && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(15,23,42,0.62)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px',
+            zIndex: 65,
+          }}
+        >
+          <form
+            onSubmit={handleSalvaModificaAnnuncio}
+            style={{
+              background: '#fff',
+              borderRadius: '16px',
+              padding: '22px',
+              maxWidth: '430px',
+              width: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '11px',
+            }}
+          >
+            <h3 style={{ margin: 0, fontFamily: fontHeading, color: '#1b365d' }}>✏️ Modifica annuncio</h3>
+
+            <input
+              type="text"
+              placeholder="Titolo"
+              value={editForm.titolo}
+              onChange={(e) => setEditForm((prev) => ({ ...prev, titolo: e.target.value }))}
+              required
+              style={{ padding: '10px 12px', borderRadius: '10px', border: '1px solid #cbd5e1', fontFamily: fontBody }}
+            />
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+              <select
+                value={editForm.categoria}
+                onChange={(e) => setEditForm((prev) => ({ ...prev, categoria: e.target.value }))}
+                style={{ padding: '10px 10px', borderRadius: '10px', border: '1px solid #cbd5e1', fontFamily: fontBody }}
+              >
+                {CATEGORIE_FORM.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                value={editForm.tipo}
+                onChange={(e) => setEditForm((prev) => ({ ...prev, tipo: e.target.value }))}
+                style={{ padding: '10px 10px', borderRadius: '10px', border: '1px solid #cbd5e1', fontFamily: fontBody }}
+              >
+                {TIPI_FORM.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {editForm.tipo !== 'In regalo' && (
+              <input
+                type="number"
+                step="0.01"
+                placeholder="Prezzo (€)"
+                value={editForm.prezzo}
+                onChange={(e) => setEditForm((prev) => ({ ...prev, prezzo: e.target.value }))}
+                style={{ padding: '10px 12px', borderRadius: '10px', border: '1px solid #cbd5e1', fontFamily: fontBody }}
+              />
+            )}
+
+            {editForm.tipo !== 'In regalo' && (
+              <label
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  fontSize: '0.85rem',
+                  fontWeight: 600,
+                  color: '#065f46',
+                  background: '#ecfdf5',
+                  padding: '8px 10px',
+                  borderRadius: '10px',
+                  cursor: 'pointer',
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={editForm.welfare}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, welfare: e.target.checked }))}
+                />
+                <span>🎟️ Accetto Welfare aziendale / Buoni</span>
+              </label>
+            )}
+
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                fontSize: '0.85rem',
+                fontWeight: 700,
+                color: '#b91c1c',
+                background: '#fee2e2',
+                padding: '8px 10px',
+                borderRadius: '10px',
+                cursor: 'pointer',
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={editForm.venduto}
+                onChange={(e) => setEditForm((prev) => ({ ...prev, venduto: e.target.checked }))}
+              />
+              <span>✅ Segna questo annuncio come VENDUTO</span>
+            </label>
+
+            <textarea
+              rows={3}
+              placeholder="Descrizione"
+              value={editForm.descrizione}
+              onChange={(e) => setEditForm((prev) => ({ ...prev, descrizione: e.target.value }))}
+              required
+              style={{
+                padding: '10px 12px',
+                borderRadius: '10px',
+                border: '1px solid #cbd5e1',
+                fontFamily: fontBody,
+                resize: 'vertical',
+              }}
+            />
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '4px' }}>
+              <button
+                type="button"
+                onClick={() => setAnnuncioInModifica(null)}
+                style={{
+                  padding: '8px 14px',
+                  borderRadius: '10px',
+                  border: '1px solid #cbd5e1',
+                  background: '#fff',
+                  cursor: 'pointer',
+                }}
+              >
+                Annulla
+              </button>
+              <button
+                type="submit"
+                disabled={salvataggioModifica}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: '10px',
+                  border: 'none',
+                  background: '#2563eb',
+                  color: '#fff',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+              >
+                {salvataggioModifica ? 'Salvataggio...' : 'Salva modifiche'}
+              </button>
+            </div>
+          </form>
         </div>
       )}
 
