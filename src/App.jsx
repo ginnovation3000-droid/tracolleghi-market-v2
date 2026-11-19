@@ -535,6 +535,20 @@ export default function App() {
           gap: 12px;
           flex-wrap: wrap;
         }
+        .tm-categories-strip {
+          display: flex;
+          flex-wrap: nowrap;
+          overflow-x: auto;
+          gap: 8px;
+          padding-bottom: 4px;
+          margin-bottom: 12px;
+          scrollbar-width: thin;
+          -webkit-overflow-scrolling: touch;
+        }
+        .tm-category-pill {
+          white-space: nowrap;
+          flex-shrink: 0;
+        }
         .tm-search-row {
           display: flex;
           gap: 10px;
@@ -723,14 +737,15 @@ export default function App() {
         }}
       >
         <div className="tm-container">
-          {/* Riga 1: Macro-categorie */}
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
+          {/* Riga 1: Macro-categorie affiancate in celle singole con icona */}
+          <div className="tm-categories-strip">
             {MACRO_CATEGORIE.map((cat) => {
               const attiva = filtroCategoria === cat.id;
               return (
                 <button
                   key={cat.id}
                   type="button"
+                  className="tm-category-pill"
                   onClick={() => setFiltroCategoria(cat.id)}
                   style={{
                     fontFamily: fontHeading,
