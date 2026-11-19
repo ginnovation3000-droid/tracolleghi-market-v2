@@ -145,7 +145,7 @@ export default function App() {
     };
   }, []);
 
-  // Profilo dipendente (Badge, Email aziendale, Reparto, Foto)
+  // Profilo dipendente
   const [userProfile, setUserProfile] = useState(() => {
     try {
       return (
@@ -178,6 +178,9 @@ export default function App() {
     fotoProfilo: userProfile.fotoProfilo || '',
   });
   const [showProfileModal, setShowProfileModal] = useState(false);
+
+  // Modale Pubblica Annuncio (aperta dal tasto + Pubblica in basso)
+  const [showPublishModal, setShowPublishModal] = useState(false);
 
   // Impostazioni & Gestione I miei annunci
   const [settings, setSettings] = useState(() => {
@@ -234,7 +237,10 @@ export default function App() {
   const [messaggi, setMessaggi] = useState([]);
   const [nuovoMessaggio, setNuovoMessaggio] = useState('');
   const [invioMessaggio, setInvioMessaggio] = useState(false);
-  const prevMsgCountRef = useRef(0);
+
+  // Tracciamento messaggi già visti (suoneria SOLO in ricezione)
+  const seenMsgIdsRef = useRef(new Set());
+  const initializedMsgsRef = useRef(false);
 
   useEffect(() => {
     localStorage.setItem('tracolleghi_user_v3', JSON.stringify(userProfile));
@@ -254,6 +260,7 @@ export default function App() {
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === 'Escape') {
+        setShowPublishModal(false);
         setShowProfileModal(false);
         setShowSettingsModal(false);
         setAnnuncioInModifica(null);
@@ -267,7 +274,6 @@ export default function App() {
 
   useEffect(() => {
     fetchAnnunci();
-    fetchMessaggi(false);
   }, []);
 
   async function fetchAnnunci() {
@@ -284,7 +290,7 @@ export default function App() {
     }
   }
 
-  async function fetchMessaggi(playSoundIfNew = false) {
+  async function fetchMessaggi() {
     try {
       const { data, error } = await supabase
         .from('messaggi')
@@ -293,33 +299,63 @@ export default function App() {
 
       if (error) return;
       const lista = data || [];
-      if (playSoundIfNew && lista.length > prevMsgCountRef.current) {
-        const ultimo = lista[lista.length - 1];
-        const mioNome = extractBaseName(userProfile.nome).toLowerCase();
-        const destNome = extractBaseName(ultimo.destinatario).toLowerCase();
-        const mittNome = extractBaseName(ultimo.mittente).toLowerCase();
-        const isDestinatario = !destNome || destNome === mioNome;
+      const mioNome = extractBaseName(userProfile.nome).toLowerCase();
 
-        if (ultimo && mioNome && mittNome !== mioNome && isDestinatario) {
+      if (!initializedMsgsRef.current) {
+        lista.forEach((m) => {
+          if (m.id != null) seenMsgIdsRef.current.add(String(m.id));
+        });
+        initializedMsgsRef.current = true;
+        setMessaggi(lista);
+        return;
+      }
+
+      const nuoviRicevutiPerMe = lista.filter((m) => {
+        const idStr = m.id != null ? String(m.id) : null;
+        const isNuovo = idStr ? !seenMsgIdsRef.current.has(idStr) : false;
+        if (!isNuovo) return false;
+
+        const mittNome = extractBaseName(m.mittente).toLowerCase();
+        const destNome = extractBaseName(m.destinatario).toLowerCase();
+        return Boolean(mioNome) && mittNome !== mioNome && (!destNome || destNome === mioNome);
+      });
+
+      lista.forEach((m) => {
+        if (m.id != null) seenMsgIdsRef.current.add(String(m.id));
+      });
+
+      setMessaggi(lista);
+
+      if (nuoviRicevutiPerMe.length > 0) {
+        const ultimoRicevuto = nuoviRicevutiPerMe[nuoviRicevutiPerMe.length - 1];
+        const chatGiaApertaSuQuestoMittente =
+          chatAperta &&
+          extractBaseName(chatAperta.altroUtente).toLowerCase() ===
+            extractBaseName(ultimoRicevuto.mittente).toLowerCase() &&
+          String(chatAperta.annuncio?.id) === String(ultimoRicevuto.annuncio_id);
+
+        if (!chatGiaApertaSuQuestoMittente) {
           if (settings.notificheAttive) {
             playNotificationSound(settings.suoneria);
           }
-          setSettings((prev) => ({ ...prev, badgeNonLetti: (prev.badgeNonLetti || 0) + 1 }));
+          setSettings((prev) => ({
+            ...prev,
+            badgeNonLetti: (prev.badgeNonLetti || 0) + nuoviRicevutiPerMe.length,
+          }));
         }
       }
-      prevMsgCountRef.current = lista.length;
-      setMessaggi(lista);
     } catch {
       // Silenzioso
     }
   }
 
   useEffect(() => {
+    fetchMessaggi();
     const timer = setInterval(() => {
-      fetchMessaggi(true);
-    }, 8000);
+      fetchMessaggi();
+    }, 6000);
     return () => clearInterval(timer);
-  }, [userProfile.nome, settings.notificheAttive, settings.suoneria]);
+  }, [userProfile.nome, settings.notificheAttive, settings.suoneria, chatAperta]);
 
   async function handleFotoProfiloChange(e) {
     const file = e.target.files?.[0];
@@ -357,6 +393,16 @@ export default function App() {
     setTimeout(() => setAvviso(''), 3500);
   }
 
+  function apriModalePubblica() {
+    setErrore('');
+    if (!userProfile.registrato || !userProfile.nome.trim()) {
+      setShowProfileModal(true);
+      setErrore('Registrati prima con Badge o Email aziendale per pubblicare un annuncio.');
+      return;
+    }
+    setShowPublishModal(true);
+  }
+
   async function handleFotoAnnuncioChange(e) {
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
@@ -391,6 +437,7 @@ export default function App() {
   async function handleSubmitAnnuncio(e) {
     e.preventDefault();
     if (!userProfile.registrato || !userProfile.nome.trim()) {
+      setShowPublishModal(false);
       setShowProfileModal(true);
       setErrore('Registrati prima con Badge o Email aziendale per pubblicare un annuncio.');
       return;
@@ -438,6 +485,7 @@ export default function App() {
       setTipoAnnuncio('In vendita');
       setAccettaWelfare(false);
       setFotoAnnuncio([]);
+      setShowPublishModal(false);
       setAvviso('Annuncio pubblicato in bacheca!');
       setTimeout(() => setAvviso(''), 3000);
       await fetchAnnunci();
@@ -607,7 +655,6 @@ export default function App() {
     });
   }, [annunci, filtroCategoria, filtroTipo, soloWelfare, ricerca]);
 
-  // Calcola per ogni annuncio dell'utente i colleghi che hanno scritto
   function getMittentiRicevuti(annuncioId) {
     const mioNome = extractBaseName(userProfile.nome).toLowerCase();
     if (!mioNome) return [];
@@ -655,7 +702,7 @@ export default function App() {
     const nomePulito = extractBaseName(altroUtente);
     setChatAperta({ annuncio, altroUtente: nomePulito });
     setSettings((prev) => ({ ...prev, badgeNonLetti: 0 }));
-    fetchMessaggi(false);
+    fetchMessaggi();
   }
 
   async function handleInviaMessaggio(e) {
@@ -680,13 +727,13 @@ export default function App() {
       if (error) {
         setErrore('Errore invio messaggio: ' + error.message);
         setMessaggi((prev) => [...prev, { ...record, id: Date.now(), created_at: new Date().toISOString() }]);
-      } else if (data) {
+      } else if (data && data.length > 0) {
+        data.forEach((row) => {
+          if (row.id != null) seenMsgIdsRef.current.add(String(row.id));
+        });
         setMessaggi((prev) => [...prev, ...data]);
       }
       setNuovoMessaggio('');
-      if (settings.notificheAttive) {
-        playNotificationSound('pop');
-      }
     } finally {
       setInvioMessaggio(false);
     }
@@ -698,6 +745,9 @@ export default function App() {
   return (
     <div style={{ minHeight: '100vh', background: '#f1f5f9', color: '#182230', fontFamily: fontBody }}>
       <style>{`
+        input, textarea, select {
+          font-size: 16px !important;
+        }
         .tm-container {
           max-width: 1280px;
           margin: 0 auto;
@@ -724,39 +774,57 @@ export default function App() {
           align-items: stretch;
           flex-wrap: wrap;
         }
-        .tm-main-grid {
+        .tm-board-wrapper {
           padding-top: 22px;
-          padding-bottom: 64px;
-          display: grid;
-          grid-template-columns: 360px 1fr;
-          gap: 24px;
-          align-items: start;
-        }
-        .tm-sidebar {
-          position: sticky;
-          top: 20px;
+          padding-bottom: 108px;
         }
         .tm-cards-grid {
           display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(275px, 1fr));
+          grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
           gap: 18px;
+        }
+        .tm-fab-publish {
+          position: fixed;
+          bottom: 22px;
+          left: 50%;
+          transform: translateX(-50%);
+          z-index: 45;
+          display: inline-flex;
+          align-items: center;
+          gap: 10px;
+          background: linear-gradient(135deg, #1b365d 0%, #2563eb 100%);
+          color: #ffffff;
+          border: 2px solid rgba(255, 255, 255, 0.9);
+          border-radius: 999px;
+          padding: 13px 26px;
+          font-family: ${fontHeading};
+          font-weight: 800;
+          font-size: 1rem;
+          letter-spacing: 0.01em;
+          cursor: pointer;
+          box-shadow: 0 12px 28px rgba(37, 99, 235, 0.38), 0 4px 10px rgba(15, 23, 42, 0.18);
+          transition: transform 0.16s ease, box-shadow 0.16s ease;
+        }
+        .tm-fab-publish:hover {
+          transform: translateX(-50%) translateY(-2px);
+          box-shadow: 0 16px 32px rgba(37, 99, 235, 0.45), 0 6px 14px rgba(15, 23, 42, 0.22);
+        }
+        .tm-fab-publish:active {
+          transform: translateX(-50%) scale(0.97);
         }
         @media (max-width: 900px) {
           .tm-container {
             padding-left: 14px;
             padding-right: 14px;
           }
-          .tm-main-grid {
-            grid-template-columns: 1fr;
+          .tm-board-wrapper {
             padding-top: 16px;
-          }
-          .tm-sidebar {
-            position: static;
+            padding-bottom: 104px;
           }
         }
       `}</style>
 
-      {/* HEADER AZIENDALE CENTRATO & IDENTITARIO */}
+      {/* HEADER AZIENDALE CENTRATO */}
       <header
         style={{
           background: 'linear-gradient(145deg, #13294b 0%, #1b365d 48%, #2563eb 100%)',
@@ -1008,7 +1076,6 @@ export default function App() {
                   borderRadius: '12px',
                   border: '2px solid #cbd5e1',
                   fontFamily: fontBody,
-                  fontSize: '0.96rem',
                   background: '#f8fafc',
                 }}
               />
@@ -1061,251 +1128,50 @@ export default function App() {
         </div>
       </section>
 
-      {/* CORPO PRINCIPALE */}
-      <main className="tm-container tm-main-grid">
-        <aside className="tm-sidebar">
-          {avviso && (
-            <div
-              style={{
-                background: '#dcfce7',
-                color: '#166534',
-                padding: '12px 16px',
-                borderRadius: '12px',
-                marginBottom: '14px',
-                fontWeight: 600,
-              }}
-            >
-              {avviso}
-            </div>
-          )}
-          {errore && (
-            <div
-              style={{
-                background: '#fee2e2',
-                color: '#991b1b',
-                padding: '12px 16px',
-                borderRadius: '12px',
-                marginBottom: '14px',
-                fontWeight: 600,
-              }}
-            >
-              {errore}
-            </div>
-          )}
-
-          <section
+      {/* BACHECA ANNUNCI A TUTTA LARGHEZZA */}
+      <main className="tm-container tm-board-wrapper">
+        {avviso && (
+          <div
             style={{
-              background: '#fff',
-              borderRadius: '16px',
-              padding: '20px',
-              boxShadow: '0 2px 12px rgba(15, 23, 42, 0.05)',
+              background: '#dcfce7',
+              color: '#166534',
+              padding: '12px 16px',
+              borderRadius: '12px',
+              marginBottom: '16px',
+              fontWeight: 600,
             }}
           >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-              <h2 style={{ margin: 0, fontFamily: fontHeading, fontSize: '1.12rem', color: '#1b365d' }}>
-                Pubblica un annuncio
-              </h2>
-              {userProfile.reparto && userProfile.registrato && (
-                <span
-                  style={{
-                    fontSize: '0.72rem',
-                    fontWeight: 700,
-                    background: '#eff6ff',
-                    color: '#1d4ed8',
-                    padding: '3px 8px',
-                    borderRadius: '8px',
-                  }}
-                >
-                  {userProfile.reparto}
-                </span>
-              )}
-            </div>
+            {avviso}
+          </div>
+        )}
+        {errore && !showPublishModal && !showProfileModal && !annuncioInModifica && (
+          <div
+            style={{
+              background: '#fee2e2',
+              color: '#991b1b',
+              padding: '12px 16px',
+              borderRadius: '12px',
+              marginBottom: '16px',
+              fontWeight: 600,
+            }}
+          >
+            {errore}
+          </div>
+        )}
 
-            <form onSubmit={handleSubmitAnnuncio} style={{ display: 'flex', flexDirection: 'column', gap: '11px' }}>
-              <input
-                type="text"
-                placeholder="Titolo (es. Bici, Trapano, Tavolo...)"
-                value={titolo}
-                onChange={(e) => setTitolo(e.target.value)}
-                required
-                style={{ padding: '10px 12px', borderRadius: '10px', border: '1px solid #cbd5e1', fontFamily: fontBody }}
-              />
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                <select
-                  value={categoria}
-                  onChange={(e) => setCategoria(e.target.value)}
-                  style={{ padding: '10px 10px', borderRadius: '10px', border: '1px solid #cbd5e1', fontFamily: fontBody }}
-                >
-                  {CATEGORIE_FORM.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-
-                <select
-                  value={tipoAnnuncio}
-                  onChange={(e) => setTipoAnnuncio(e.target.value)}
-                  style={{ padding: '10px 10px', borderRadius: '10px', border: '1px solid #cbd5e1', fontFamily: fontBody }}
-                >
-                  {TIPI_FORM.map((t) => (
-                    <option key={t} value={t}>
-                      {t}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {tipoAnnuncio !== 'In regalo' && (
-                <input
-                  type="number"
-                  step="0.01"
-                  placeholder={tipoAnnuncio === 'A noleggio' ? 'Tariffa (€ / giorno)' : 'Prezzo (€)'}
-                  value={prezzo}
-                  onChange={(e) => setPrezzo(e.target.value)}
-                  style={{ padding: '10px 12px', borderRadius: '10px', border: '1px solid #cbd5e1', fontFamily: fontBody }}
-                />
-              )}
-
-              {tipoAnnuncio !== 'In regalo' && (
-                <label
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '9px',
-                    background: accettaWelfare ? '#ecfdf5' : '#f8fafc',
-                    border: accettaWelfare ? '1px solid #10b981' : '1px solid #e2e8f0',
-                    padding: '9px 12px',
-                    borderRadius: '10px',
-                    cursor: 'pointer',
-                    fontSize: '0.84rem',
-                    fontWeight: 600,
-                    color: accettaWelfare ? '#065f46' : '#334155',
-                  }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={accettaWelfare}
-                    onChange={(e) => setAccettaWelfare(e.target.checked)}
-                  />
-                  <span>🎟️ Accetto anche Welfare aziendale / Buoni</span>
-                </label>
-              )}
-
-              <textarea
-                placeholder="Descrivi l'oggetto, le condizioni e come ritirarlo in azienda..."
-                value={descrizione}
-                onChange={(e) => setDescrizione(e.target.value)}
-                rows={3}
-                required
-                style={{
-                  padding: '10px 12px',
-                  borderRadius: '10px',
-                  border: '1px solid #cbd5e1',
-                  fontFamily: fontBody,
-                  resize: 'vertical',
-                }}
-              />
-
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                  <label
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                      background: fotoAnnuncio.length >= 4 ? '#e2e8f0' : '#eff6ff',
-                      color: fotoAnnuncio.length >= 4 ? '#64748b' : '#1d4ed8',
-                      padding: '8px 12px',
-                      borderRadius: '10px',
-                      fontWeight: 600,
-                      fontSize: '0.84rem',
-                      cursor: fotoAnnuncio.length >= 4 ? 'not-allowed' : 'pointer',
-                    }}
-                  >
-                    📷 Foto ({fotoAnnuncio.length}/4)
-                    <input
-                      type="file"
-                      accept="image/*"
-                      multiple
-                      disabled={fotoAnnuncio.length >= 4}
-                      onChange={handleFotoAnnuncioChange}
-                      style={{ display: 'none' }}
-                    />
-                  </label>
-                  <span style={{ fontSize: '0.76rem', color: '#64748b' }}>Max 4 foto</span>
-                </div>
-
-                {fotoAnnuncio.length > 0 && (
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' }}>
-                    {fotoAnnuncio.map((src, idx) => (
-                      <div key={idx} style={{ position: 'relative', borderRadius: '10px', overflow: 'hidden' }}>
-                        <img
-                          src={src}
-                          alt={`Anteprima ${idx + 1}`}
-                          style={{ width: '100%', height: '64px', objectFit: 'cover', display: 'block' }}
-                        />
-                        <button
-                          type="button"
-                          onClick={() => removeFotoAnnuncio(idx)}
-                          style={{
-                            position: 'absolute',
-                            top: '3px',
-                            right: '3px',
-                            background: 'rgba(15,23,42,0.78)',
-                            color: '#fff',
-                            border: 'none',
-                            borderRadius: '999px',
-                            width: '20px',
-                            height: '20px',
-                            cursor: 'pointer',
-                            fontSize: '0.7rem',
-                          }}
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <button
-                type="submit"
-                disabled={loading}
-                style={{
-                  background: '#2563eb',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: '12px',
-                  padding: '12px 18px',
-                  fontFamily: fontHeading,
-                  fontWeight: 700,
-                  fontSize: '0.95rem',
-                  cursor: 'pointer',
-                }}
-              >
-                {loading ? 'Pubblicazione...' : 'Pubblica annuncio'}
-              </button>
-            </form>
-          </section>
-        </aside>
-
-        {/* BACHECA ANNUNCI */}
         <section className="tm-cards-grid">
           {annunciFiltrati.length === 0 ? (
             <div
               style={{
                 background: '#fff',
                 borderRadius: '16px',
-                padding: '28px',
+                padding: '32px',
                 textAlign: 'center',
                 color: '#64748b',
                 gridColumn: '1 / -1',
               }}
             >
-              Nessun annuncio trovato con i filtri selezionati.
+              Nessun annuncio trovato con i filtri selezionati. Premi <strong>+ Pubblica</strong> qui in basso per inserire il primo!
             </div>
           ) : (
             annunciFiltrati.map((item) => {
@@ -1351,7 +1217,7 @@ export default function App() {
                             alt={`${item.titolo} ${i + 1}`}
                             style={{
                               width: '100%',
-                              height: foto.length === 1 ? '185px' : '94px',
+                              height: foto.length === 1 ? '195px' : '98px',
                               objectFit: 'cover',
                               display: 'block',
                               filter: venduto ? 'grayscale(45%)' : 'none',
@@ -1562,6 +1428,322 @@ export default function App() {
         </section>
       </main>
 
+      {/* PULSANTE FLUTTUANTE CENTRALE IN BASSO: + PUBBLICA */}
+      <button
+        type="button"
+        className="tm-fab-publish"
+        onClick={apriModalePubblica}
+        aria-label="Pubblica un nuovo annuncio"
+      >
+        <span
+          style={{
+            width: '28px',
+            height: '28px',
+            borderRadius: '50%',
+            background: '#ffffff',
+            color: '#1b365d',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '1.35rem',
+            fontWeight: 800,
+            lineHeight: 1,
+          }}
+        >
+          +
+        </span>
+        <span>Pubblica</span>
+      </button>
+
+      {/* MODALE PUBBLICA ANNUNCIO */}
+      {showPublishModal && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(15, 23, 42, 0.6)',
+            backdropFilter: 'blur(3px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px',
+            zIndex: 60,
+          }}
+        >
+          <div
+            style={{
+              background: '#ffffff',
+              borderRadius: '20px',
+              padding: '22px',
+              maxWidth: '470px',
+              width: '100%',
+              maxHeight: '90vh',
+              overflowY: 'auto',
+              boxShadow: '0 24px 48px rgba(15, 23, 42, 0.25)',
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: '14px',
+              }}
+            >
+              <div>
+                <h2 style={{ margin: 0, fontFamily: fontHeading, fontSize: '1.2rem', color: '#1b365d' }}>
+                  Nuovo annuncio
+                </h2>
+                {userProfile.reparto && userProfile.registrato && (
+                  <span style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: 600 }}>
+                    Pubblichi come {userProfile.nome} • {userProfile.reparto}
+                  </span>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowPublishModal(false)}
+                style={{
+                  width: '32px',
+                  height: '32px',
+                  borderRadius: '50%',
+                  border: '1px solid #e2e8f0',
+                  background: '#f8fafc',
+                  color: '#475569',
+                  fontSize: '1rem',
+                  cursor: 'pointer',
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {errore && (
+              <div
+                style={{
+                  background: '#fee2e2',
+                  color: '#991b1b',
+                  padding: '10px 12px',
+                  borderRadius: '10px',
+                  marginBottom: '12px',
+                  fontSize: '0.85rem',
+                  fontWeight: 600,
+                }}
+              >
+                {errore}
+              </div>
+            )}
+
+            <form onSubmit={handleSubmitAnnuncio} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <input
+                type="text"
+                placeholder="Titolo (es. Bici, Trapano, Tavolo...)"
+                value={titolo}
+                onChange={(e) => setTitolo(e.target.value)}
+                required
+                style={{ padding: '11px 13px', borderRadius: '11px', border: '1px solid #cbd5e1', fontFamily: fontBody }}
+              />
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <select
+                  value={categoria}
+                  onChange={(e) => setCategoria(e.target.value)}
+                  style={{ padding: '10px 11px', borderRadius: '11px', border: '1px solid #cbd5e1', fontFamily: fontBody }}
+                >
+                  {CATEGORIE_FORM.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+
+                <select
+                  value={tipoAnnuncio}
+                  onChange={(e) => setTipoAnnuncio(e.target.value)}
+                  style={{ padding: '10px 11px', borderRadius: '11px', border: '1px solid #cbd5e1', fontFamily: fontBody }}
+                >
+                  {TIPI_FORM.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {tipoAnnuncio !== 'In regalo' && (
+                <input
+                  type="number"
+                  step="0.01"
+                  placeholder={tipoAnnuncio === 'A noleggio' ? 'Tariffa (€ / giorno)' : 'Prezzo (€)'}
+                  value={prezzo}
+                  onChange={(e) => setPrezzo(e.target.value)}
+                  style={{ padding: '11px 13px', borderRadius: '11px', border: '1px solid #cbd5e1', fontFamily: fontBody }}
+                />
+              )}
+
+              {tipoAnnuncio !== 'In regalo' && (
+                <label
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '9px',
+                    background: accettaWelfare ? '#ecfdf5' : '#f8fafc',
+                    border: accettaWelfare ? '1px solid #10b981' : '1px solid #e2e8f0',
+                    padding: '10px 12px',
+                    borderRadius: '11px',
+                    cursor: 'pointer',
+                    fontSize: '0.85rem',
+                    fontWeight: 600,
+                    color: accettaWelfare ? '#065f46' : '#334155',
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={accettaWelfare}
+                    onChange={(e) => setAccettaWelfare(e.target.checked)}
+                  />
+                  <span>🎟️ Accetto anche Welfare aziendale / Buoni</span>
+                </label>
+              )}
+
+              <textarea
+                placeholder="Descrivi l'oggetto, le condizioni e come ritirarlo in azienda..."
+                value={descrizione}
+                onChange={(e) => setDescrizione(e.target.value)}
+                rows={3}
+                required
+                style={{
+                  padding: '11px 13px',
+                  borderRadius: '11px',
+                  border: '1px solid #cbd5e1',
+                  fontFamily: fontBody,
+                  resize: 'vertical',
+                }}
+              />
+
+              {/* RIQUADRO CARICAMENTO FOTO CON ICONA */}
+              <div>
+                <label
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    padding: '16px 12px',
+                    borderRadius: '14px',
+                    border: '2px dashed #93c5fd',
+                    background: fotoAnnuncio.length >= 4 ? '#f1f5f9' : '#eff6ff',
+                    color: fotoAnnuncio.length >= 4 ? '#64748b' : '#1d4ed8',
+                    cursor: fotoAnnuncio.length >= 4 ? 'not-allowed' : 'pointer',
+                    textAlign: 'center',
+                  }}
+                >
+                  <svg
+                    width="34"
+                    height="34"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.9"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                    <circle cx="12" cy="13" r="4" />
+                  </svg>
+                  <span style={{ fontWeight: 700, fontSize: '0.9rem' }}>
+                    {fotoAnnuncio.length >= 4 ? 'Limite di 4 foto raggiunto' : 'Aggiungi foto dell’oggetto'}
+                  </span>
+                  <span style={{ fontSize: '0.76rem', color: '#475569' }}>
+                    Tocca per scattare o scegliere dalla galleria ({fotoAnnuncio.length}/4)
+                  </span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    disabled={fotoAnnuncio.length >= 4}
+                    onChange={handleFotoAnnuncioChange}
+                    style={{ display: 'none' }}
+                  />
+                </label>
+
+                {fotoAnnuncio.length > 0 && (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', marginTop: '10px' }}>
+                    {fotoAnnuncio.map((src, idx) => (
+                      <div key={idx} style={{ position: 'relative', borderRadius: '10px', overflow: 'hidden' }}>
+                        <img
+                          src={src}
+                          alt={`Anteprima ${idx + 1}`}
+                          style={{ width: '100%', height: '66px', objectFit: 'cover', display: 'block' }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removeFotoAnnuncio(idx)}
+                          style={{
+                            position: 'absolute',
+                            top: '3px',
+                            right: '3px',
+                            background: 'rgba(15,23,42,0.78)',
+                            color: '#fff',
+                            border: 'none',
+                            borderRadius: '999px',
+                            width: '20px',
+                            height: '20px',
+                            cursor: 'pointer',
+                            fontSize: '0.7rem',
+                          }}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px', marginTop: '4px' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowPublishModal(false)}
+                  style={{
+                    flex: 1,
+                    padding: '12px',
+                    borderRadius: '12px',
+                    border: '1px solid #cbd5e1',
+                    background: '#fff',
+                    fontFamily: fontHeading,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Annulla
+                </button>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  style={{
+                    flex: 2,
+                    background: '#2563eb',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '12px',
+                    padding: '12px 18px',
+                    fontFamily: fontHeading,
+                    fontWeight: 700,
+                    fontSize: '0.96rem',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {loading ? 'Pubblicazione...' : 'Pubblica ora'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* MODALE CONFERMA ELIMINAZIONE */}
       {annuncioDaEliminare && (
         <div
@@ -1627,7 +1809,7 @@ export default function App() {
             alignItems: 'center',
             justifyContent: 'center',
             padding: '16px',
-            zIndex: 50,
+            zIndex: 65,
           }}
         >
           <form
@@ -1649,6 +1831,21 @@ export default function App() {
                 Inserisci il tuo numero di Badge o la mail aziendale per partecipare alla bacheca interna.
               </p>
             </div>
+
+            {errore && (
+              <div
+                style={{
+                  background: '#fee2e2',
+                  color: '#991b1b',
+                  padding: '9px 12px',
+                  borderRadius: '10px',
+                  fontSize: '0.84rem',
+                  fontWeight: 600,
+                }}
+              >
+                {errore}
+              </div>
+            )}
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
               {authForm.fotoProfilo ? (
@@ -1719,7 +1916,10 @@ export default function App() {
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '6px' }}>
               <button
                 type="button"
-                onClick={() => setShowProfileModal(false)}
+                onClick={() => {
+                  setErrore('');
+                  setShowProfileModal(false);
+                }}
                 style={{
                   padding: '8px 14px',
                   borderRadius: '10px',
