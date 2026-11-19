@@ -674,13 +674,6 @@ export default function App() {
           padding-left: 20px;
           padding-right: 20px;
         }
-        .tm-header-inner {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 12px;
-          flex-wrap: wrap;
-        }
         .tm-categories-strip {
           display: flex;
           flex-wrap: nowrap;
@@ -733,49 +726,27 @@ export default function App() {
         }
       `}</style>
 
-      {/* HEADER AZIENDALE */}
+      {/* HEADER AZIENDALE CENTRATO & IDENTITARIO */}
       <header
         style={{
-          background: 'linear-gradient(135deg, #1b365d 0%, #2563eb 100%)',
+          background: 'linear-gradient(145deg, #13294b 0%, #1b365d 48%, #2563eb 100%)',
           color: '#fff',
-          padding: '16px 0',
+          padding: '18px 0 22px',
+          position: 'relative',
+          boxShadow: '0 8px 24px rgba(19, 41, 75, 0.16)',
         }}
       >
-        <div className="tm-container tm-header-inner">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <img
-              src="/icona-tracolleghi.jpg"
-              alt="TRACOLLEGHI Market"
-              onError={(e) => {
-                e.currentTarget.style.display = 'none';
-              }}
-              style={{
-                width: '44px',
-                height: '44px',
-                borderRadius: '12px',
-                objectFit: 'cover',
-                background: '#fff',
-              }}
-            />
-            <div>
-              <h1
-                style={{
-                  margin: 0,
-                  fontFamily: fontHeading,
-                  fontWeight: 800,
-                  fontSize: '1.45rem',
-                  letterSpacing: '-0.03em',
-                }}
-              >
-                TRACOLLEGHI <span style={{ color: '#93c5fd', fontWeight: 700 }}>Market</span>
-              </h1>
-              <p style={{ margin: '2px 0 0', fontSize: '0.82rem', opacity: 0.92 }}>
-                Bacheca interna reparti • Badge / Mail aziendale • Welfare OK
-              </p>
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <div className="tm-container">
+          {/* Barra azioni rapida in alto a destra */}
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'flex-end',
+              alignItems: 'center',
+              gap: '10px',
+              marginBottom: '6px',
+            }}
+          >
             {settings.badgeNonLetti > 0 && (
               <span
                 style={{
@@ -815,20 +786,21 @@ export default function App() {
                 cursor: 'pointer',
                 fontFamily: fontBody,
                 fontWeight: 600,
-                fontSize: '0.85rem',
+                fontSize: '0.84rem',
+                backdropFilter: 'blur(6px)',
               }}
             >
               {userProfile.fotoProfilo ? (
                 <img
                   src={userProfile.fotoProfilo}
                   alt={userProfile.nome || 'Profilo'}
-                  style={{ width: '28px', height: '28px', borderRadius: '50%', objectFit: 'cover' }}
+                  style={{ width: '26px', height: '26px', borderRadius: '50%', objectFit: 'cover' }}
                 />
               ) : (
                 <span
                   style={{
-                    width: '28px',
-                    height: '28px',
+                    width: '26px',
+                    height: '26px',
                     borderRadius: '50%',
                     background: '#ffffff',
                     color: '#1b365d',
@@ -836,6 +808,7 @@ export default function App() {
                     alignItems: 'center',
                     justifyContent: 'center',
                     fontWeight: 700,
+                    fontSize: '0.82rem',
                   }}
                 >
                   {(userProfile.nome || 'B').charAt(0).toUpperCase()}
@@ -857,18 +830,19 @@ export default function App() {
                 setShowSettingsModal(true);
               }}
               style={{
-                width: '40px',
-                height: '40px',
+                width: '38px',
+                height: '38px',
                 borderRadius: '50%',
                 border: '1px solid rgba(255,255,255,0.28)',
                 background: 'rgba(255,255,255,0.16)',
                 color: '#fff',
-                fontSize: '1.15rem',
+                fontSize: '1.1rem',
                 cursor: 'pointer',
                 display: 'inline-flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 position: 'relative',
+                backdropFilter: 'blur(6px)',
               }}
             >
               ⚙️
@@ -895,6 +869,59 @@ export default function App() {
                 </span>
               )}
             </button>
+          </div>
+
+          {/* Blocco centrale: Logo grande, titolo e descrizione sotto */}
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              textAlign: 'center',
+              gap: '8px',
+            }}
+          >
+            <img
+              src="/icona-tracolleghi.jpg"
+              alt="TRACOLLEGHI Market"
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+              }}
+              style={{
+                width: '84px',
+                height: '84px',
+                borderRadius: '22px',
+                objectFit: 'cover',
+                background: '#fff',
+                border: '3px solid rgba(255,255,255,0.85)',
+                boxShadow: '0 10px 24px rgba(0, 0, 0, 0.24)',
+              }}
+            />
+
+            <h1
+              style={{
+                margin: '2px 0 0',
+                fontFamily: fontHeading,
+                fontWeight: 800,
+                fontSize: 'clamp(1.5rem, 3.2vw, 2rem)',
+                letterSpacing: '-0.03em',
+                lineHeight: 1.1,
+              }}
+            >
+              TRACOLLEGHI <span style={{ color: '#93c5fd', fontWeight: 700 }}>Market</span>
+            </h1>
+
+            <p
+              style={{
+                margin: 0,
+                maxWidth: '560px',
+                fontSize: '0.9rem',
+                lineHeight: 1.45,
+                color: 'rgba(255, 255, 255, 0.92)',
+              }}
+            >
+              La bacheca tra colleghi di reparto per vendere, regalare o noleggiare con Badge, Mail aziendale e Welfare OK.
+            </p>
           </div>
         </div>
       </header>
