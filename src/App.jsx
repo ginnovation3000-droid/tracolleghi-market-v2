@@ -77,6 +77,37 @@ function playNotificationSound(soundId = 'chime') {
   }
 }
 
+async function sendSystemNotification(title, body, tag = 'tracolleghi-msg') {
+  if (typeof window === 'undefined' || !('Notification' in window)) return;
+  if (Notification.permission !== 'granted') return;
+
+  const options = {
+    body,
+    icon: '/icona-tracolleghi.jpg',
+    badge: '/icona-tracolleghi.jpg',
+    tag,
+    renotify: true,
+    vibrate: [180, 90, 180],
+  };
+
+  try {
+    if ('serviceWorker' in navigator) {
+      const reg = await navigator.serviceWorker.getRegistration();
+      if (reg && reg.showNotification) {
+        await reg.showNotification(title, options);
+        return;
+      }
+    }
+    const notif = new Notification(title, options);
+    notif.onclick = () => {
+      window.focus();
+      notif.close();
+    };
+  } catch {
+    // Fallback silenzioso
+  }
+}
+
 function compressImageFile(file, maxWidth = 800, quality = 0.68) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -145,6 +176,18 @@ export default function App() {
     };
   }, []);
 
+  // Registrazione Service Worker per notifiche di sistema
+  useEffect(() => {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
+    }
+  }, []);
+
+  // Stato permesso notifiche telefono
+  const [notifPermission, setNotifPermission] = useState(() =>
+    typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'unsupported'
+  );
+
   // Profilo dipendente
   const [userProfile, setUserProfile] = useState(() => {
     try {
@@ -179,7 +222,7 @@ export default function App() {
   });
   const [showProfileModal, setShowProfileModal] = useState(false);
 
-  // Modale Pubblica Annuncio (aperta dal tasto + Pubblica in basso)
+  // Modale Pubblica Annuncio (aperta dal tasto Pubblica in basso)
   const [showPublishModal, setShowPublishModal] = useState(false);
 
   // Impostazioni & Gestione I miei annunci
@@ -238,7 +281,7 @@ export default function App() {
   const [nuovoMessaggio, setNuovoMessaggio] = useState('');
   const [invioMessaggio, setInvioMessaggio] = useState(false);
 
-  // Tracciamento messaggi già visti (suoneria SOLO in ricezione)
+  // Tracciamento messaggi già visti (suoneria e push SOLO in ricezione)
   const seenMsgIdsRef = useRef(new Set());
   const initializedMsgsRef = useRef(false);
 
@@ -275,6 +318,35 @@ export default function App() {
   useEffect(() => {
     fetchAnnunci();
   }, []);
+
+  async function richiediPermessoNotifiche(mostraFeedback = true) {
+    if (typeof window === 'undefined' || !('Notification' in window)) {
+      if (mostraFeedback) {
+        setErrore('Su iPhone aggiungi prima l’app alla Schermata Home (Condividi -> Aggiungi alla schermata Home) per attivare le notifiche.');
+      }
+      return;
+    }
+    try {
+      const res = await Notification.requestPermission();
+      setNotifPermission(res);
+      if (res === 'granted') {
+        setSettings((prev) => ({ ...prev, notificheAttive: true }));
+        if (mostraFeedback) {
+          await sendSystemNotification(
+            'TRACOLLEGHI Market',
+            'Notifiche attive! Riceverai qui i messaggi dei tuoi colleghi.',
+            'tracolleghi-test'
+          );
+          setAvviso('Notifiche sul telefono attivate!');
+          setTimeout(() => setAvviso(''), 3000);
+        }
+      } else if (mostraFeedback && res === 'denied') {
+        setErrore('Notifiche bloccate dal browser: abilitale nelle impostazioni del telefono per TRACOLLEGHI Market.');
+      }
+    } catch {
+      // Silenzioso
+    }
+  }
 
   async function fetchAnnunci() {
     try {
@@ -328,7 +400,9 @@ export default function App() {
 
       if (nuoviRicevutiPerMe.length > 0) {
         const ultimoRicevuto = nuoviRicevutiPerMe[nuoviRicevutiPerMe.length - 1];
+        const appInBackground = document.visibilityState === 'hidden';
         const chatGiaApertaSuQuestoMittente =
+          !appInBackground &&
           chatAperta &&
           extractBaseName(chatAperta.altroUtente).toLowerCase() ===
             extractBaseName(ultimoRicevuto.mittente).toLowerCase() &&
@@ -337,6 +411,16 @@ export default function App() {
         if (!chatGiaApertaSuQuestoMittente) {
           if (settings.notificheAttive) {
             playNotificationSound(settings.suoneria);
+            const annuncioRif = annunci.find((a) => String(a.id) === String(ultimoRicevuto.annuncio_id));
+            const mittentePulito = extractBaseName(ultimoRicevuto.mittente) || 'Un collega';
+            const titoloNotif = annuncioRif
+              ? `${mittentePulito} • ${annuncioRif.titolo}`
+              : `Nuovo messaggio da ${mittentePulito}`;
+            sendSystemNotification(
+              titoloNotif,
+              ultimoRicevuto.testo,
+              `msg-${ultimoRicevuto.annuncio_id}-${mittentePulito}`
+            );
           }
           setSettings((prev) => ({
             ...prev,
@@ -353,9 +437,9 @@ export default function App() {
     fetchMessaggi();
     const timer = setInterval(() => {
       fetchMessaggi();
-    }, 6000);
+    }, 5000);
     return () => clearInterval(timer);
-  }, [userProfile.nome, settings.notificheAttive, settings.suoneria, chatAperta]);
+  }, [userProfile.nome, settings.notificheAttive, settings.suoneria, chatAperta, annunci]);
 
   async function handleFotoProfiloChange(e) {
     const file = e.target.files?.[0];
@@ -368,7 +452,7 @@ export default function App() {
     }
   }
 
-  function handleSaveProfile(e) {
+  async function handleSaveProfile(e) {
     e.preventDefault();
     if (!authForm.nome.trim()) {
       setErrore('Inserisci il tuo Nome e Cognome.');
@@ -391,6 +475,10 @@ export default function App() {
     setErrore('');
     setAvviso(`Profilo aziendale salvato: ${updated.nome} (${updated.reparto})`);
     setTimeout(() => setAvviso(''), 3500);
+
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
+      richiediPermessoNotifiche(false);
+    }
   }
 
   function apriModalePubblica() {
@@ -754,13 +842,57 @@ export default function App() {
           padding-left: 20px;
           padding-right: 20px;
         }
+        .tm-header-bar {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+        }
+        .tm-header-brand {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          min-width: 0;
+        }
+        .tm-header-logo {
+          width: 44px;
+          height: 44px;
+          border-radius: 12px;
+          object-fit: cover;
+          display: block;
+          flex-shrink: 0;
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.24);
+        }
+        .tm-header-title {
+          margin: 0;
+          font-family: ${fontHeading};
+          font-weight: 800;
+          font-size: clamp(1.12rem, 2.6vw, 1.5rem);
+          letter-spacing: -0.02em;
+          line-height: 1.1;
+          white-space: nowrap;
+        }
+        .tm-header-subtitle {
+          margin: 2px 0 0;
+          font-size: 0.74rem;
+          color: rgba(255, 255, 255, 0.84);
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .tm-profile-label {
+          max-width: 150px;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
         .tm-categories-strip {
           display: flex;
           flex-wrap: nowrap;
           overflow-x: auto;
           gap: 8px;
           padding-bottom: 4px;
-          margin-bottom: 12px;
+          margin-bottom: 10px;
           scrollbar-width: thin;
           -webkit-overflow-scrolling: touch;
         }
@@ -775,7 +907,7 @@ export default function App() {
           flex-wrap: wrap;
         }
         .tm-board-wrapper {
-          padding-top: 22px;
+          padding-top: 18px;
           padding-bottom: 108px;
         }
         .tm-cards-grid {
@@ -791,16 +923,16 @@ export default function App() {
           z-index: 45;
           display: inline-flex;
           align-items: center;
-          gap: 10px;
+          justify-content: center;
           background: linear-gradient(135deg, #1b365d 0%, #2563eb 100%);
           color: #ffffff;
-          border: 2px solid rgba(255, 255, 255, 0.9);
+          border: 2px solid rgba(255, 255, 255, 0.92);
           border-radius: 999px;
-          padding: 13px 26px;
+          padding: 14px 34px;
           font-family: ${fontHeading};
           font-weight: 800;
-          font-size: 1rem;
-          letter-spacing: 0.01em;
+          font-size: 1.02rem;
+          letter-spacing: 0.02em;
           cursor: pointer;
           box-shadow: 0 12px 28px rgba(37, 99, 235, 0.38), 0 4px 10px rgba(15, 23, 42, 0.18);
           transition: transform 0.16s ease, box-shadow 0.16s ease;
@@ -818,44 +950,70 @@ export default function App() {
             padding-right: 14px;
           }
           .tm-board-wrapper {
-            padding-top: 16px;
+            padding-top: 14px;
             padding-bottom: 104px;
+          }
+        }
+        @media (max-width: 600px) {
+          .tm-header-logo {
+            width: 38px;
+            height: 38px;
+            border-radius: 10px;
+          }
+          .tm-header-subtitle {
+            display: none;
+          }
+          .tm-profile-label {
+            max-width: 96px;
           }
         }
       `}</style>
 
-      {/* HEADER AZIENDALE CENTRATO */}
+      {/* HEADER COMPATTO SU RIGA SINGOLA */}
       <header
         style={{
-          background: 'linear-gradient(145deg, #13294b 0%, #1b365d 48%, #2563eb 100%)',
+          background: 'linear-gradient(135deg, #13294b 0%, #1b365d 52%, #2563eb 100%)',
           color: '#fff',
-          padding: '18px 0 22px',
-          position: 'relative',
-          boxShadow: '0 8px 24px rgba(19, 41, 75, 0.16)',
+          padding: '10px 0',
+          position: 'sticky',
+          top: 0,
+          zIndex: 40,
+          boxShadow: '0 4px 14px rgba(19, 41, 75, 0.16)',
         }}
       >
-        <div className="tm-container">
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'flex-end',
-              alignItems: 'center',
-              gap: '10px',
-              marginBottom: '6px',
-            }}
-          >
+        <div className="tm-container tm-header-bar">
+          <div className="tm-header-brand">
+            <img
+              src="/icona-tracolleghi.jpg"
+              alt="TRACOLLEGHI Market"
+              className="tm-header-logo"
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+              }}
+            />
+            <div style={{ minWidth: 0 }}>
+              <h1 className="tm-header-title">
+                TRACOLLEGHI <span style={{ color: '#93c5fd', fontWeight: 700 }}>Market</span>
+              </h1>
+              <p className="tm-header-subtitle">
+                Bacheca interna tra colleghi • Badge, Mail aziendale & Welfare OK
+              </p>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
             {settings.badgeNonLetti > 0 && (
               <span
                 style={{
                   background: '#ef4444',
                   color: '#fff',
-                  fontSize: '0.78rem',
-                  fontWeight: 700,
-                  padding: '4px 10px',
+                  fontSize: '0.74rem',
+                  fontWeight: 800,
+                  padding: '3px 8px',
                   borderRadius: '999px',
                 }}
               >
-                {settings.badgeNonLetti} nuove
+                {settings.badgeNonLetti}
               </span>
             )}
 
@@ -874,16 +1032,16 @@ export default function App() {
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: '8px',
+                gap: '7px',
                 background: 'rgba(255,255,255,0.16)',
                 color: '#fff',
                 border: '1px solid rgba(255,255,255,0.28)',
                 borderRadius: '999px',
-                padding: '5px 13px 5px 6px',
+                padding: '4px 11px 4px 5px',
                 cursor: 'pointer',
                 fontFamily: fontBody,
                 fontWeight: 600,
-                fontSize: '0.84rem',
+                fontSize: '0.8rem',
                 backdropFilter: 'blur(6px)',
               }}
             >
@@ -891,13 +1049,13 @@ export default function App() {
                 <img
                   src={userProfile.fotoProfilo}
                   alt={userProfile.nome || 'Profilo'}
-                  style={{ width: '26px', height: '26px', borderRadius: '50%', objectFit: 'cover' }}
+                  style={{ width: '24px', height: '24px', borderRadius: '50%', objectFit: 'cover' }}
                 />
               ) : (
                 <span
                   style={{
-                    width: '26px',
-                    height: '26px',
+                    width: '24px',
+                    height: '24px',
                     borderRadius: '50%',
                     background: '#ffffff',
                     color: '#1b365d',
@@ -905,16 +1063,17 @@ export default function App() {
                     alignItems: 'center',
                     justifyContent: 'center',
                     fontWeight: 700,
-                    fontSize: '0.82rem',
+                    fontSize: '0.78rem',
+                    flexShrink: 0,
                   }}
                 >
                   {(userProfile.nome || 'B').charAt(0).toUpperCase()}
                 </span>
               )}
-              <span>
+              <span className="tm-profile-label">
                 {userProfile.registrato && userProfile.nome
-                  ? `${userProfile.nome}${userProfile.badge ? ` • #${userProfile.badge}` : ''}`
-                  : 'Accedi con Badge / Mail'}
+                  ? `${userProfile.nome}${userProfile.badge ? ` #${userProfile.badge}` : ''}`
+                  : 'Accedi'}
               </span>
             </button>
 
@@ -927,13 +1086,13 @@ export default function App() {
                 setShowSettingsModal(true);
               }}
               style={{
-                width: '38px',
-                height: '38px',
+                width: '34px',
+                height: '34px',
                 borderRadius: '50%',
                 border: '1px solid rgba(255,255,255,0.28)',
                 background: 'rgba(255,255,255,0.16)',
                 color: '#fff',
-                fontSize: '1.1rem',
+                fontSize: '1rem',
                 cursor: 'pointer',
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -951,10 +1110,10 @@ export default function App() {
                     right: '-3px',
                     background: '#22c55e',
                     color: '#fff',
-                    fontSize: '0.68rem',
+                    fontSize: '0.64rem',
                     fontWeight: 800,
-                    minWidth: '18px',
-                    height: '18px',
+                    minWidth: '16px',
+                    height: '16px',
                     borderRadius: '999px',
                     display: 'inline-flex',
                     alignItems: 'center',
@@ -967,57 +1126,6 @@ export default function App() {
               )}
             </button>
           </div>
-
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              textAlign: 'center',
-              gap: '8px',
-            }}
-          >
-            <img
-              src="/icona-tracolleghi.jpg"
-              alt="TRACOLLEGHI Market"
-              onError={(e) => {
-                e.currentTarget.style.display = 'none';
-              }}
-              style={{
-                width: '88px',
-                height: '88px',
-                borderRadius: '22px',
-                objectFit: 'cover',
-                display: 'block',
-                boxShadow: '0 10px 24px rgba(0, 0, 0, 0.28)',
-              }}
-            />
-
-            <h1
-              style={{
-                margin: '2px 0 0',
-                fontFamily: fontHeading,
-                fontWeight: 800,
-                fontSize: 'clamp(1.5rem, 3.2vw, 2rem)',
-                letterSpacing: '-0.03em',
-                lineHeight: 1.1,
-              }}
-            >
-              TRACOLLEGHI <span style={{ color: '#93c5fd', fontWeight: 700 }}>Market</span>
-            </h1>
-
-            <p
-              style={{
-                margin: 0,
-                maxWidth: '560px',
-                fontSize: '0.9rem',
-                lineHeight: 1.45,
-                color: 'rgba(255, 255, 255, 0.92)',
-              }}
-            >
-              La bacheca tra colleghi di reparto per vendere, regalare o noleggiare con Badge, Mail aziendale e Welfare OK.
-            </p>
-          </div>
         </div>
       </header>
 
@@ -1027,7 +1135,7 @@ export default function App() {
           background: '#ffffff',
           borderBottom: '1px solid #e2e8f0',
           boxShadow: '0 4px 14px rgba(15, 23, 42, 0.04)',
-          padding: '14px 0 18px',
+          padding: '12px 0 14px',
         }}
       >
         <div className="tm-container">
@@ -1043,9 +1151,9 @@ export default function App() {
                   style={{
                     fontFamily: fontHeading,
                     fontWeight: 700,
-                    fontSize: '0.84rem',
-                    padding: '8px 14px',
-                    borderRadius: '12px',
+                    fontSize: '0.82rem',
+                    padding: '7px 13px',
+                    borderRadius: '11px',
                     border: attiva ? '1px solid #1b365d' : '1px solid #e2e8f0',
                     background: attiva ? '#1b365d' : '#f8fafc',
                     color: attiva ? '#fff' : '#334155',
@@ -1066,14 +1174,14 @@ export default function App() {
             <div style={{ position: 'relative', flex: '1 1 320px' }}>
               <input
                 type="search"
-                placeholder="Cosa stai cercando tra i colleghi? (es. Bici, Trapano, Passeggino, Reparto...)"
+                placeholder="Cerca tra i colleghi (es. Bici, Trapano, Reparto...)"
                 value={ricerca}
                 onChange={(e) => setRicerca(e.target.value)}
                 style={{
                   width: '100%',
                   boxSizing: 'border-box',
-                  padding: '12px 16px',
-                  borderRadius: '12px',
+                  padding: '10px 14px',
+                  borderRadius: '11px',
                   border: '2px solid #cbd5e1',
                   fontFamily: fontBody,
                   background: '#f8fafc',
@@ -1092,9 +1200,9 @@ export default function App() {
                     style={{
                       fontFamily: fontHeading,
                       fontWeight: 700,
-                      fontSize: '0.8rem',
-                      padding: '10px 13px',
-                      borderRadius: '11px',
+                      fontSize: '0.78rem',
+                      padding: '8px 12px',
+                      borderRadius: '10px',
                       border: attivo ? '1px solid #2563eb' : '1px solid #dbe2ec',
                       background: attivo ? '#eff6ff' : '#fff',
                       color: attivo ? '#1d4ed8' : '#475569',
@@ -1112,9 +1220,9 @@ export default function App() {
                 style={{
                   fontFamily: fontHeading,
                   fontWeight: 700,
-                  fontSize: '0.8rem',
-                  padding: '10px 13px',
-                  borderRadius: '11px',
+                  fontSize: '0.78rem',
+                  padding: '8px 12px',
+                  borderRadius: '10px',
                   border: soloWelfare ? '1px solid #059669' : '1px solid #dbe2ec',
                   background: soloWelfare ? '#ecfdf5' : '#fff',
                   color: soloWelfare ? '#047857' : '#475569',
@@ -1171,7 +1279,7 @@ export default function App() {
                 gridColumn: '1 / -1',
               }}
             >
-              Nessun annuncio trovato con i filtri selezionati. Premi <strong>+ Pubblica</strong> qui in basso per inserire il primo!
+              Nessun annuncio trovato con i filtri selezionati. Premi <strong>Pubblica</strong> qui in basso per inserire il primo!
             </div>
           ) : (
             annunciFiltrati.map((item) => {
@@ -1428,34 +1536,17 @@ export default function App() {
         </section>
       </main>
 
-      {/* PULSANTE FLUTTUANTE CENTRALE IN BASSO: + PUBBLICA */}
+      {/* PULSANTE FLUTTUANTE CENTRALE IN BASSO: PUBBLICA (SENZA +) */}
       <button
         type="button"
         className="tm-fab-publish"
         onClick={apriModalePubblica}
         aria-label="Pubblica un nuovo annuncio"
       >
-        <span
-          style={{
-            width: '28px',
-            height: '28px',
-            borderRadius: '50%',
-            background: '#ffffff',
-            color: '#1b365d',
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: '1.35rem',
-            fontWeight: 800,
-            lineHeight: 1,
-          }}
-        >
-          +
-        </span>
         <span>Pubblica</span>
       </button>
 
-      {/* MODALE PUBBLICA ANNUNCIO */}
+      {/* MODALE PUBBLICA ANNUNCIO (FOTO IN CIMA, POI IL RESTO A SCENDERE) */}
       {showPublishModal && (
         <div
           style={{
@@ -1536,6 +1627,88 @@ export default function App() {
             )}
 
             <form onSubmit={handleSubmitAnnuncio} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {/* 1. RIQUADRO CARICAMENTO FOTO IN CIMA */}
+              <div>
+                <label
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    padding: '16px 12px',
+                    borderRadius: '14px',
+                    border: '2px dashed #93c5fd',
+                    background: fotoAnnuncio.length >= 4 ? '#f1f5f9' : '#eff6ff',
+                    color: fotoAnnuncio.length >= 4 ? '#64748b' : '#1d4ed8',
+                    cursor: fotoAnnuncio.length >= 4 ? 'not-allowed' : 'pointer',
+                    textAlign: 'center',
+                  }}
+                >
+                  <svg
+                    width="34"
+                    height="34"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.9"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                    <circle cx="12" cy="13" r="4" />
+                  </svg>
+                  <span style={{ fontWeight: 700, fontSize: '0.9rem' }}>
+                    {fotoAnnuncio.length >= 4 ? 'Limite di 4 foto raggiunto' : 'Aggiungi foto dell’oggetto'}
+                  </span>
+                  <span style={{ fontSize: '0.76rem', color: '#475569' }}>
+                    Tocca per scattare o scegliere dalla galleria ({fotoAnnuncio.length}/4)
+                  </span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    disabled={fotoAnnuncio.length >= 4}
+                    onChange={handleFotoAnnuncioChange}
+                    style={{ display: 'none' }}
+                  />
+                </label>
+
+                {fotoAnnuncio.length > 0 && (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', marginTop: '10px' }}>
+                    {fotoAnnuncio.map((src, idx) => (
+                      <div key={idx} style={{ position: 'relative', borderRadius: '10px', overflow: 'hidden' }}>
+                        <img
+                          src={src}
+                          alt={`Anteprima ${idx + 1}`}
+                          style={{ width: '100%', height: '66px', objectFit: 'cover', display: 'block' }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removeFotoAnnuncio(idx)}
+                          style={{
+                            position: 'absolute',
+                            top: '3px',
+                            right: '3px',
+                            background: 'rgba(15,23,42,0.78)',
+                            color: '#fff',
+                            border: 'none',
+                            borderRadius: '999px',
+                            width: '20px',
+                            height: '20px',
+                            cursor: 'pointer',
+                            fontSize: '0.7rem',
+                          }}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* 2. TITOLO E DETTAGLI A SCENDERE */}
               <input
                 type="text"
                 placeholder="Titolo (es. Bici, Trapano, Tavolo...)"
@@ -1621,87 +1794,6 @@ export default function App() {
                   resize: 'vertical',
                 }}
               />
-
-              {/* RIQUADRO CARICAMENTO FOTO CON ICONA */}
-              <div>
-                <label
-                  style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '6px',
-                    padding: '16px 12px',
-                    borderRadius: '14px',
-                    border: '2px dashed #93c5fd',
-                    background: fotoAnnuncio.length >= 4 ? '#f1f5f9' : '#eff6ff',
-                    color: fotoAnnuncio.length >= 4 ? '#64748b' : '#1d4ed8',
-                    cursor: fotoAnnuncio.length >= 4 ? 'not-allowed' : 'pointer',
-                    textAlign: 'center',
-                  }}
-                >
-                  <svg
-                    width="34"
-                    height="34"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.9"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
-                    <circle cx="12" cy="13" r="4" />
-                  </svg>
-                  <span style={{ fontWeight: 700, fontSize: '0.9rem' }}>
-                    {fotoAnnuncio.length >= 4 ? 'Limite di 4 foto raggiunto' : 'Aggiungi foto dell’oggetto'}
-                  </span>
-                  <span style={{ fontSize: '0.76rem', color: '#475569' }}>
-                    Tocca per scattare o scegliere dalla galleria ({fotoAnnuncio.length}/4)
-                  </span>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    disabled={fotoAnnuncio.length >= 4}
-                    onChange={handleFotoAnnuncioChange}
-                    style={{ display: 'none' }}
-                  />
-                </label>
-
-                {fotoAnnuncio.length > 0 && (
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', marginTop: '10px' }}>
-                    {fotoAnnuncio.map((src, idx) => (
-                      <div key={idx} style={{ position: 'relative', borderRadius: '10px', overflow: 'hidden' }}>
-                        <img
-                          src={src}
-                          alt={`Anteprima ${idx + 1}`}
-                          style={{ width: '100%', height: '66px', objectFit: 'cover', display: 'block' }}
-                        />
-                        <button
-                          type="button"
-                          onClick={() => removeFotoAnnuncio(idx)}
-                          style={{
-                            position: 'absolute',
-                            top: '3px',
-                            right: '3px',
-                            background: 'rgba(15,23,42,0.78)',
-                            color: '#fff',
-                            border: 'none',
-                            borderRadius: '999px',
-                            width: '20px',
-                            height: '20px',
-                            cursor: 'pointer',
-                            fontSize: '0.7rem',
-                          }}
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
 
               <div style={{ display: 'flex', gap: '10px', marginTop: '4px' }}>
                 <button
@@ -2195,6 +2287,51 @@ export default function App() {
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                <div
+                  style={{
+                    background: '#eff6ff',
+                    border: '1px solid #bfdbfe',
+                    borderRadius: '12px',
+                    padding: '12px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '8px',
+                  }}
+                >
+                  <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#1b365d' }}>
+                    📲 Notifiche sullo schermo del telefono
+                  </div>
+                  <div style={{ fontSize: '0.8rem', color: '#334155', lineHeight: 1.4 }}>
+                    Stato permesso:{' '}
+                    <strong>
+                      {notifPermission === 'granted'
+                        ? 'Attive ✅'
+                        : notifPermission === 'denied'
+                        ? 'Bloccate dal telefono ❌'
+                        : 'Da attivare'}
+                    </strong>
+                    . Su iPhone aggiungi prima l’app alla Schermata Home.
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    <button
+                      type="button"
+                      onClick={() => richiediPermessoNotifiche(true)}
+                      style={{
+                        padding: '8px 13px',
+                        borderRadius: '10px',
+                        border: 'none',
+                        background: '#2563eb',
+                        color: '#fff',
+                        fontWeight: 700,
+                        fontSize: '0.82rem',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {notifPermission === 'granted' ? 'Invia notifica di prova' : 'Attiva notifiche sul telefono'}
+                    </button>
+                  </div>
+                </div>
+
                 <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontWeight: 600 }}>
                   <span>Suoni e notifiche</span>
                   <input
