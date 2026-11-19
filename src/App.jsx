@@ -225,7 +225,7 @@ export default function App() {
   // Modale Pubblica Annuncio (aperta dal tasto Pubblica in basso)
   const [showPublishModal, setShowPublishModal] = useState(false);
 
-  // Impostazioni & Gestione I miei annunci
+  // Impostazioni & Gestione Annunci
   const [settings, setSettings] = useState(() => {
     try {
       return (
@@ -240,9 +240,9 @@ export default function App() {
     }
   });
   const [showSettingsModal, setShowSettingsModal] = useState(false);
-  const [settingsTab, setSettingsTab] = useState('miei_annunci');
+  const [settingsTab, setSettingsTab] = useState('attivi');
 
-  // Modifica annuncio da "I miei annunci"
+  // Modifica annuncio
   const [annuncioInModifica, setAnnuncioInModifica] = useState(null);
   const [editForm, setEditForm] = useState({
     titolo: '',
@@ -592,6 +592,16 @@ export default function App() {
     );
   }, [annunci, userProfile.nome]);
 
+  const mieiAnnunciAttivi = useMemo(
+    () => mieiAnnunci.filter((item) => !isAnnuncioVenduto(item)),
+    [mieiAnnunci]
+  );
+
+  const mieiAnnunciVenduti = useMemo(
+    () => mieiAnnunci.filter((item) => isAnnuncioVenduto(item)),
+    [mieiAnnunci]
+  );
+
   function apriModificaAnnuncio(item) {
     const isWelfare = Boolean(item.welfare) || /\[welfare ok\]/i.test(item.descrizione || '');
     const isVenduto = isAnnuncioVenduto(item);
@@ -693,7 +703,7 @@ export default function App() {
       setAnnunci((prev) =>
         prev.map((a) => (a.id === item.id ? { ...a, descrizione: descrizioneFinale } : a))
       );
-      setAvviso(nuovoStatoVenduto ? 'Annuncio segnato come VENDUTO!' : 'Annuncio rimesso in bacheca come disponibile.');
+      setAvviso(nuovoStatoVenduto ? 'Annuncio spostato in Annunci venduti!' : 'Annuncio rimesso in Annunci attivi.');
       setTimeout(() => setAvviso(''), 3000);
     } catch (err) {
       setErrore('Impossibile aggiornare lo stato: ' + err.message);
@@ -830,6 +840,8 @@ export default function App() {
   const fontHeading = "'Syne', 'Plus Jakarta Sans', sans-serif";
   const fontBody = "'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif";
 
+  const listaAnnunciImpostazioni = settingsTab === 'attivi' ? mieiAnnunciAttivi : mieiAnnunciVenduti;
+
   return (
     <div style={{ minHeight: '100vh', background: '#f1f5f9', color: '#182230', fontFamily: fontBody }}>
       <style>{`
@@ -846,42 +858,72 @@ export default function App() {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          gap: 10px;
+          gap: 8px;
+          min-width: 0;
         }
         .tm-header-brand {
           display: flex;
           align-items: center;
-          gap: 10px;
+          gap: 9px;
+          flex: 1 1 auto;
           min-width: 0;
         }
         .tm-header-logo {
-          width: 44px;
-          height: 44px;
-          border-radius: 12px;
+          width: 40px;
+          height: 40px;
+          border-radius: 11px;
           object-fit: cover;
           display: block;
           flex-shrink: 0;
-          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.24);
+          box-shadow: 0 3px 10px rgba(0, 0, 0, 0.22);
+        }
+        .tm-header-title-wrap {
+          min-width: 0;
+          flex: 1 1 auto;
         }
         .tm-header-title {
           margin: 0;
           font-family: ${fontHeading};
           font-weight: 800;
-          font-size: clamp(1.12rem, 2.6vw, 1.5rem);
+          font-size: clamp(0.96rem, 2.4vw, 1.42rem);
           letter-spacing: -0.02em;
-          line-height: 1.1;
-          white-space: nowrap;
+          line-height: 1.08;
+          display: flex;
+          flex-wrap: wrap;
+          align-items: baseline;
+          gap: 0 6px;
         }
         .tm-header-subtitle {
           margin: 2px 0 0;
-          font-size: 0.74rem;
+          font-size: 0.72rem;
           color: rgba(255, 255, 255, 0.84);
           white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;
         }
+        .tm-header-actions {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          flex-shrink: 0;
+        }
+        .tm-profile-btn {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          background: rgba(255, 255, 255, 0.16);
+          color: #fff;
+          border: 1px solid rgba(255, 255, 255, 0.28);
+          border-radius: 999px;
+          padding: 4px 10px 4px 4px;
+          cursor: pointer;
+          font-family: ${fontBody};
+          font-weight: 600;
+          font-size: 0.78rem;
+          backdrop-filter: blur(6px);
+          max-width: 145px;
+        }
         .tm-profile-label {
-          max-width: 150px;
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
@@ -946,8 +988,8 @@ export default function App() {
         }
         @media (max-width: 900px) {
           .tm-container {
-            padding-left: 14px;
-            padding-right: 14px;
+            padding-left: 12px;
+            padding-right: 12px;
           }
           .tm-board-wrapper {
             padding-top: 14px;
@@ -956,20 +998,27 @@ export default function App() {
         }
         @media (max-width: 600px) {
           .tm-header-logo {
-            width: 38px;
-            height: 38px;
+            width: 36px;
+            height: 36px;
             border-radius: 10px;
+          }
+          .tm-header-title {
+            font-size: 0.95rem;
+            flex-direction: column;
+            gap: 0;
           }
           .tm-header-subtitle {
             display: none;
           }
-          .tm-profile-label {
-            max-width: 96px;
+          .tm-profile-btn {
+            max-width: 92px;
+            padding: 3px 8px 3px 3px;
+            font-size: 0.74rem;
           }
         }
       `}</style>
 
-      {/* HEADER COMPATTO SU RIGA SINGOLA */}
+      {/* HEADER COMPATTO SENZA SOVRAPPOSIZIONI */}
       <header
         style={{
           background: 'linear-gradient(135deg, #13294b 0%, #1b365d 52%, #2563eb 100%)',
@@ -991,9 +1040,10 @@ export default function App() {
                 e.currentTarget.style.display = 'none';
               }}
             />
-            <div style={{ minWidth: 0 }}>
+            <div className="tm-header-title-wrap">
               <h1 className="tm-header-title">
-                TRACOLLEGHI <span style={{ color: '#93c5fd', fontWeight: 700 }}>Market</span>
+                <span>TRACOLLEGHI</span>
+                <span style={{ color: '#93c5fd', fontWeight: 700 }}>Market</span>
               </h1>
               <p className="tm-header-subtitle">
                 Bacheca interna tra colleghi • Badge, Mail aziendale & Welfare OK
@@ -1001,16 +1051,17 @@ export default function App() {
             </div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+          <div className="tm-header-actions">
             {settings.badgeNonLetti > 0 && (
               <span
                 style={{
                   background: '#ef4444',
                   color: '#fff',
-                  fontSize: '0.74rem',
+                  fontSize: '0.72rem',
                   fontWeight: 800,
-                  padding: '3px 8px',
+                  padding: '2px 7px',
                   borderRadius: '999px',
+                  flexShrink: 0,
                 }}
               >
                 {settings.badgeNonLetti}
@@ -1019,6 +1070,7 @@ export default function App() {
 
             <button
               type="button"
+              className="tm-profile-btn"
               onClick={() => {
                 setAuthForm({
                   nome: userProfile.nome || '',
@@ -1029,33 +1081,18 @@ export default function App() {
                 });
                 setShowProfileModal(true);
               }}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '7px',
-                background: 'rgba(255,255,255,0.16)',
-                color: '#fff',
-                border: '1px solid rgba(255,255,255,0.28)',
-                borderRadius: '999px',
-                padding: '4px 11px 4px 5px',
-                cursor: 'pointer',
-                fontFamily: fontBody,
-                fontWeight: 600,
-                fontSize: '0.8rem',
-                backdropFilter: 'blur(6px)',
-              }}
             >
               {userProfile.fotoProfilo ? (
                 <img
                   src={userProfile.fotoProfilo}
                   alt={userProfile.nome || 'Profilo'}
-                  style={{ width: '24px', height: '24px', borderRadius: '50%', objectFit: 'cover' }}
+                  style={{ width: '23px', height: '23px', borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }}
                 />
               ) : (
                 <span
                   style={{
-                    width: '24px',
-                    height: '24px',
+                    width: '23px',
+                    height: '23px',
                     borderRadius: '50%',
                     background: '#ffffff',
                     color: '#1b365d',
@@ -1063,7 +1100,7 @@ export default function App() {
                     alignItems: 'center',
                     justifyContent: 'center',
                     fontWeight: 700,
-                    fontSize: '0.78rem',
+                    fontSize: '0.75rem',
                     flexShrink: 0,
                   }}
                 >
@@ -1071,18 +1108,16 @@ export default function App() {
                 </span>
               )}
               <span className="tm-profile-label">
-                {userProfile.registrato && userProfile.nome
-                  ? `${userProfile.nome}${userProfile.badge ? ` #${userProfile.badge}` : ''}`
-                  : 'Accedi'}
+                {userProfile.registrato && userProfile.nome ? userProfile.nome : 'Accedi'}
               </span>
             </button>
 
             <button
               type="button"
-              aria-label="Impostazioni e I miei annunci"
-              title="Impostazioni & I miei annunci"
+              aria-label="Impostazioni e Annunci"
+              title="Impostazioni & Gestione Annunci"
               onClick={() => {
-                setSettingsTab('miei_annunci');
+                setSettingsTab('attivi');
                 setShowSettingsModal(true);
               }}
               style={{
@@ -1097,33 +1132,11 @@ export default function App() {
                 display: 'inline-flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                position: 'relative',
+                flexShrink: 0,
                 backdropFilter: 'blur(6px)',
               }}
             >
               ⚙️
-              {mieiAnnunci.length > 0 && (
-                <span
-                  style={{
-                    position: 'absolute',
-                    top: '-3px',
-                    right: '-3px',
-                    background: '#22c55e',
-                    color: '#fff',
-                    fontSize: '0.64rem',
-                    fontWeight: 800,
-                    minWidth: '16px',
-                    height: '16px',
-                    borderRadius: '999px',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    border: '2px solid #1b365d',
-                  }}
-                >
-                  {mieiAnnunci.length}
-                </span>
-              )}
             </button>
           </div>
         </div>
@@ -1510,7 +1523,7 @@ export default function App() {
                         <button
                           type="button"
                           onClick={() => {
-                            setSettingsTab('miei_annunci');
+                            setSettingsTab(venduto ? 'venduti' : 'attivi');
                             setShowSettingsModal(true);
                           }}
                           style={{
@@ -1536,7 +1549,7 @@ export default function App() {
         </section>
       </main>
 
-      {/* PULSANTE FLUTTUANTE CENTRALE IN BASSO: PUBBLICA (SENZA +) */}
+      {/* PULSANTE FLUTTUANTE CENTRALE IN BASSO: PUBBLICA */}
       <button
         type="button"
         className="tm-fab-publish"
@@ -2041,7 +2054,7 @@ export default function App() {
         </div>
       )}
 
-      {/* MODALE IMPOSTAZIONI & I MIEI ANNUNCI */}
+      {/* MODALE IMPOSTAZIONI: ANNUNCI ATTIVI, ANNUNCI VENDUTI & NOTIFICHE */}
       {showSettingsModal && (
         <div
           style={{
@@ -2080,34 +2093,51 @@ export default function App() {
               </button>
             </div>
 
-            <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid #e2e8f0', paddingBottom: '10px' }}>
+            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', borderBottom: '1px solid #e2e8f0', paddingBottom: '10px' }}>
               <button
                 type="button"
-                onClick={() => setSettingsTab('miei_annunci')}
+                onClick={() => setSettingsTab('attivi')}
                 style={{
-                  padding: '8px 14px',
+                  padding: '8px 12px',
                   borderRadius: '10px',
                   border: 'none',
                   fontFamily: fontHeading,
                   fontWeight: 700,
-                  fontSize: '0.84rem',
+                  fontSize: '0.8rem',
                   cursor: 'pointer',
-                  background: settingsTab === 'miei_annunci' ? '#1b365d' : '#f1f5f9',
-                  color: settingsTab === 'miei_annunci' ? '#fff' : '#334155',
+                  background: settingsTab === 'attivi' ? '#1b365d' : '#f1f5f9',
+                  color: settingsTab === 'attivi' ? '#fff' : '#334155',
                 }}
               >
-                📋 I miei annunci ({mieiAnnunci.length})
+                Annunci attivi ({mieiAnnunciAttivi.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setSettingsTab('venduti')}
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: '10px',
+                  border: 'none',
+                  fontFamily: fontHeading,
+                  fontWeight: 700,
+                  fontSize: '0.8rem',
+                  cursor: 'pointer',
+                  background: settingsTab === 'venduti' ? '#1b365d' : '#f1f5f9',
+                  color: settingsTab === 'venduti' ? '#fff' : '#334155',
+                }}
+              >
+                Annunci venduti ({mieiAnnunciVenduti.length})
               </button>
               <button
                 type="button"
                 onClick={() => setSettingsTab('preferenze')}
                 style={{
-                  padding: '8px 14px',
+                  padding: '8px 12px',
                   borderRadius: '10px',
                   border: 'none',
                   fontFamily: fontHeading,
                   fontWeight: 700,
-                  fontSize: '0.84rem',
+                  fontSize: '0.8rem',
                   cursor: 'pointer',
                   background: settingsTab === 'preferenze' ? '#1b365d' : '#f1f5f9',
                   color: settingsTab === 'preferenze' ? '#fff' : '#334155',
@@ -2117,18 +2147,20 @@ export default function App() {
               </button>
             </div>
 
-            {settingsTab === 'miei_annunci' ? (
+            {settingsTab === 'attivi' || settingsTab === 'venduti' ? (
               <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px', paddingRight: '2px' }}>
                 {!userProfile.registrato || !userProfile.nome ? (
                   <p style={{ color: '#64748b', fontSize: '0.9rem', textAlign: 'center', margin: '18px 0' }}>
                     Accedi prima con Badge o Mail aziendale per vedere e gestire i tuoi annunci.
                   </p>
-                ) : mieiAnnunci.length === 0 ? (
+                ) : listaAnnunciImpostazioni.length === 0 ? (
                   <p style={{ color: '#64748b', fontSize: '0.9rem', textAlign: 'center', margin: '18px 0' }}>
-                    Non hai ancora pubblicato nessun annuncio.
+                    {settingsTab === 'attivi'
+                      ? 'Non hai annunci attivi al momento.'
+                      : 'Non hai ancora nessun annuncio venduto.'}
                   </p>
                 ) : (
-                  mieiAnnunci.map((item) => {
+                  listaAnnunciImpostazioni.map((item) => {
                     const venduto = isAnnuncioVenduto(item);
                     const foto = normalizeImages(item);
                     const ricevuti = getMittentiRicevuti(item.id);
@@ -2242,7 +2274,7 @@ export default function App() {
                               cursor: 'pointer',
                             }}
                           >
-                            {venduto ? '↩️ Rimetto disponibile' : '✅ Segna Venduto'}
+                            {venduto ? '↩️ Sposta in Annunci attivi' : '✅ Segna come venduto'}
                           </button>
 
                           <button
