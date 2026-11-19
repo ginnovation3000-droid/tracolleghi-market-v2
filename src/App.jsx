@@ -7,10 +7,27 @@ const SUPABASE_KEY = 'sb_publishable_YQvIcQl-DbTD48tlMuIdGA_5EmW-fW_';
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-const CATEGORIE = ['Tutte', 'Elettronica', 'Motori', 'Casa & Tempo Libero', 'Generale'];
-const CATEGORIE_FORM = ['Elettronica', 'Motori', 'Casa & Tempo Libero', 'Generale'];
+const MACRO_CATEGORIE = [
+  { id: 'Tutte', label: 'Tutte le categorie', icon: '🏷️' },
+  { id: 'Motori', label: 'Motori & Ricambi', icon: '🛵' },
+  { id: 'Elettronica', label: 'Elettronica & Tech', icon: '📱' },
+  { id: 'Casa & Tempo Libero', label: 'Casa & Tempo Libero', icon: '🏡' },
+  { id: 'Generale', label: 'Sport, Bambini & Altro', icon: '🎒' },
+];
+
+const CATEGORIE_FORM = ['Motori', 'Elettronica', 'Casa & Tempo Libero', 'Generale'];
 const TIPI_ANNUNCIO = ['Tutti', 'In vendita', 'In regalo', 'A noleggio'];
 const TIPI_FORM = ['In vendita', 'In regalo', 'A noleggio'];
+
+const REPARTI_AZIENDA = [
+  'Produzione / Linea',
+  'Ufficio Tecnico / Progettazione',
+  'Logistica / Magazzino',
+  'Qualità & Collaudo',
+  'Manutenzione',
+  'Amministrazione / Acquisti / HR',
+  'Altro Reparto',
+];
 
 const SUONERIE = [
   { id: 'chime', label: 'Trillo Gentile' },
@@ -19,7 +36,6 @@ const SUONERIE = [
   { id: 'silent', label: 'Silenzioso' },
 ];
 
-// Suoni di notifica generati localmente senza file audio esterni
 function playNotificationSound(soundId = 'chime') {
   if (!soundId || soundId === 'silent') return;
   try {
@@ -53,11 +69,10 @@ function playNotificationSound(soundId = 'chime') {
       tone(880, 0.14, 0.25, 'sine', 0.11);
     }
   } catch {
-    // Ignora eventuali blocchi autoplay audio
+    // Ignora eventuali blocchi audio
   }
 }
 
-// Ridimensiona e comprime leggermente le foto (max 4 per annuncio)
 function compressImageFile(file, maxWidth = 900, quality = 0.72) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -101,7 +116,6 @@ function buildThreadKey(annuncioId, userA, userB) {
 }
 
 export default function App() {
-  // Caricamento Google Fonts: Syne (titoli/brand) + Plus Jakarta Sans (testi/UI)
   useEffect(() => {
     const link = document.createElement('link');
     link.rel = 'stylesheet';
@@ -113,30 +127,41 @@ export default function App() {
     };
   }, []);
 
-  // Profilo utente registrato + foto profilo
+  // Profilo dipendente (Badge, Email aziendale, Reparto, Foto)
   const [userProfile, setUserProfile] = useState(() => {
     try {
       return (
-        JSON.parse(localStorage.getItem('tracolleghi_user_v2')) || {
+        JSON.parse(localStorage.getItem('tracolleghi_user_v3')) || {
           nome: '',
+          badge: '',
           email: '',
+          reparto: REPARTI_AZIENDA[0],
           fotoProfilo: '',
           registrato: false,
         }
       );
     } catch {
-      return { nome: '', email: '', fotoProfilo: '', registrato: false };
+      return {
+        nome: '',
+        badge: '',
+        email: '',
+        reparto: REPARTI_AZIENDA[0],
+        fotoProfilo: '',
+        registrato: false,
+      };
     }
   });
 
   const [authForm, setAuthForm] = useState({
     nome: userProfile.nome || '',
+    badge: userProfile.badge || '',
     email: userProfile.email || '',
+    reparto: userProfile.reparto || REPARTI_AZIENDA[0],
     fotoProfilo: userProfile.fotoProfilo || '',
   });
   const [showProfileModal, setShowProfileModal] = useState(false);
 
-  // Impostazioni app (rotella)
+  // Impostazioni
   const [settings, setSettings] = useState(() => {
     try {
       return (
@@ -156,6 +181,7 @@ export default function App() {
   const [annunci, setAnnunci] = useState([]);
   const [filtroCategoria, setFiltroCategoria] = useState('Tutte');
   const [filtroTipo, setFiltroTipo] = useState('Tutti');
+  const [soloWelfare, setSoloWelfare] = useState(false);
   const [ricerca, setRicerca] = useState('');
 
   // Form pubblicazione annuncio
@@ -163,28 +189,25 @@ export default function App() {
   const [descrizione, setDescrizione] = useState('');
   const [prezzo, setPrezzo] = useState('');
   const [tipoAnnuncio, setTipoAnnuncio] = useState('In vendita');
-  const [categoria, setCategoria] = useState('Elettronica');
-  const [fotoAnnuncio, setFotoAnnuncio] = useState([]); // max 4
+  const [categoria, setCategoria] = useState('Motori');
+  const [accettaWelfare, setAccettaWelfare] = useState(false);
+  const [fotoAnnuncio, setFotoAnnuncio] = useState([]);
   const [loading, setLoading] = useState(false);
   const [errore, setErrore] = useState('');
   const [avviso, setAvviso] = useState('');
 
-  // Conferma eliminazione annuncio
+  // Modali
   const [annuncioDaEliminare, setAnnuncioDaEliminare] = useState(null);
-
-  // Chat privata 1-a-1
-  const [chatAperta, setChatAperta] = useState(null); // { annuncio, altroUtente }
+  const [chatAperta, setChatAperta] = useState(null);
   const [messaggi, setMessaggi] = useState([]);
   const [nuovoMessaggio, setNuovoMessaggio] = useState('');
   const [invioMessaggio, setInvioMessaggio] = useState(false);
   const prevMsgCountRef = useRef(0);
 
-  // Salvataggio profilo in localStorage
   useEffect(() => {
-    localStorage.setItem('tracolleghi_user_v2', JSON.stringify(userProfile));
+    localStorage.setItem('tracolleghi_user_v3', JSON.stringify(userProfile));
   }, [userProfile]);
 
-  // Salvataggio impostazioni e aggiornamento badge icona (smartphone + PC PWA)
   useEffect(() => {
     localStorage.setItem('tracolleghi_settings_v2', JSON.stringify(settings));
     if ('setAppBadge' in navigator && 'clearAppBadge' in navigator) {
@@ -196,7 +219,6 @@ export default function App() {
     }
   }, [settings]);
 
-  // Chiusura modali con tasto ESC su PC
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === 'Escape') {
@@ -254,11 +276,10 @@ export default function App() {
       prevMsgCountRef.current = lista.length;
       setMessaggi(lista);
     } catch {
-      // Silenzioso se la tabella messaggi non è ancora popolata
+      // Silenzioso
     }
   }
 
-  // Controllo periodico per nuovi messaggi personali
   useEffect(() => {
     const timer = setInterval(() => {
       fetchMessaggi(true);
@@ -280,20 +301,26 @@ export default function App() {
   function handleSaveProfile(e) {
     e.preventDefault();
     if (!authForm.nome.trim()) {
-      setErrore('Inserisci il tuo nome o cognome per registrarti.');
+      setErrore('Inserisci il tuo Nome e Cognome.');
+      return;
+    }
+    if (!authForm.badge.trim() && !authForm.email.trim()) {
+      setErrore('Inserisci almeno il Numero Badge oppure la Email aziendale per la verifica interno-colleghi.');
       return;
     }
     const updated = {
       nome: authForm.nome.trim(),
+      badge: authForm.badge.trim(),
       email: authForm.email.trim(),
+      reparto: authForm.reparto || REPARTI_AZIENDA[0],
       fotoProfilo: authForm.fotoProfilo,
       registrato: true,
     };
     setUserProfile(updated);
     setShowProfileModal(false);
     setErrore('');
-    setAvviso(`Profilo salvato per ${updated.nome}!`);
-    setTimeout(() => setAvviso(''), 3000);
+    setAvviso(`Profilo aziendale salvato: ${updated.nome} (${updated.reparto})`);
+    setTimeout(() => setAvviso(''), 3500);
   }
 
   async function handleFotoAnnuncioChange(e) {
@@ -329,7 +356,12 @@ export default function App() {
 
   async function handleSubmitAnnuncio(e) {
     e.preventDefault();
-    const autoreFinale = userProfile.nome?.trim() || 'Collega';
+    if (!userProfile.registrato || !userProfile.nome.trim()) {
+      setShowProfileModal(true);
+      setErrore('Registrati prima con Badge o Email aziendale per pubblicare un annuncio.');
+      return;
+    }
+
     if (!titolo.trim() || !descrizione.trim()) {
       setErrore('Compila almeno titolo e descrizione.');
       return;
@@ -345,17 +377,22 @@ export default function App() {
         ? parseFloat(prezzo)
         : null;
 
+    const tagWelfare = accettaWelfare ? ' [WELFARE OK]' : '';
+    const infoReparto = userProfile.reparto ? ` • ${userProfile.reparto}` : '';
+
     const payloadBase = {
       titolo: titolo.trim(),
-      descrizione: descrizione.trim(),
+      descrizione: `${descrizione.trim()}${tagWelfare}`,
       prezzo: prezzoNum,
       categoria,
-      autore: autoreFinale,
+      autore: `${userProfile.nome.trim()}${infoReparto}`,
     };
 
     const payloadEsteso = {
       ...payloadBase,
       tipo: tipoAnnuncio,
+      welfare: accettaWelfare,
+      reparto: userProfile.reparto || '',
       immagine: JSON.stringify(fotoAnnuncio),
       autore_foto: userProfile.fotoProfilo || '',
     };
@@ -365,7 +402,7 @@ export default function App() {
       if (error) {
         const fallbackPayload = {
           ...payloadBase,
-          descrizione: `[${tipoAnnuncio}] ${descrizione.trim()}`,
+          descrizione: `[${tipoAnnuncio}] ${descrizione.trim()}${tagWelfare}`,
           immagine: fotoAnnuncio[0] || null,
         };
         const resFallback = await supabase.from('annunci').insert([fallbackPayload]);
@@ -378,8 +415,9 @@ export default function App() {
       setDescrizione('');
       setPrezzo('');
       setTipoAnnuncio('In vendita');
+      setAccettaWelfare(false);
       setFotoAnnuncio([]);
-      setAvviso('Annuncio pubblicato correttamente!');
+      setAvviso('Annuncio pubblicato in bacheca!');
       setTimeout(() => setAvviso(''), 3000);
       await fetchAnnunci();
     } catch (err) {
@@ -407,7 +445,7 @@ export default function App() {
     }
   }
 
-  // Filtraggio combinato per categoria, tipologia e ricerca
+  // Filtraggio combinato: Macro-categoria, Ricerca, Tipo, Welfare
   const annunciFiltrati = useMemo(() => {
     return annunci.filter((item) => {
       const okCat = filtroCategoria === 'Tutte' || item.categoria === filtroCategoria;
@@ -419,17 +457,20 @@ export default function App() {
           ? 'A noleggio'
           : 'In vendita');
       const okTipo = filtroTipo === 'Tutti' || tipoRilevato === filtroTipo;
+      const hasWelfare = Boolean(item.welfare) || /\[welfare ok\]/i.test(item.descrizione || '');
+      const okWelfare = !soloWelfare || hasWelfare;
+
       const q = ricerca.trim().toLowerCase();
       const okRicerca =
         !q ||
         (item.titolo || '').toLowerCase().includes(q) ||
         (item.descrizione || '').toLowerCase().includes(q) ||
-        (item.autore || '').toLowerCase().includes(q);
-      return okCat && okTipo && okRicerca;
+        (item.autore || '').toLowerCase().includes(q) ||
+        (item.reparto || '').toLowerCase().includes(q);
+      return okCat && okTipo && okWelfare && okRicerca;
     });
-  }, [annunci, filtroCategoria, filtroTipo, ricerca]);
+  }, [annunci, filtroCategoria, filtroTipo, soloWelfare, ricerca]);
 
-  // Messaggi esclusivi della chat privata 1-a-1 attiva
   const messaggiChatAttiva = useMemo(() => {
     if (!chatAperta || !userProfile.nome) return [];
     const key = buildThreadKey(chatAperta.annuncio.id, userProfile.nome, chatAperta.altroUtente);
@@ -448,7 +489,7 @@ export default function App() {
   function apriChatPrivata(annuncio, altroUtente) {
     if (!userProfile.registrato || !userProfile.nome.trim()) {
       setShowProfileModal(true);
-      setErrore('Completa prima il tuo profilo per avviare una chat privata.');
+      setErrore('Registrati prima con Badge o Email aziendale per avviare una chat privata.');
       return;
     }
     setChatAperta({ annuncio, altroUtente });
@@ -493,23 +534,32 @@ export default function App() {
   const fontBody = "'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif";
 
   return (
-    <div style={{ minHeight: '100vh', background: '#f4f6fa', color: '#182230', fontFamily: fontBody }}>
+    <div style={{ minHeight: '100vh', background: '#f1f5f9', color: '#182230', fontFamily: fontBody }}>
       <style>{`
-        .tm-header-inner {
+        .tm-container {
           max-width: 1280px;
           margin: 0 auto;
+          padding-left: 20px;
+          padding-right: 20px;
+        }
+        .tm-header-inner {
           display: flex;
           align-items: center;
           justify-content: space-between;
           gap: 12px;
           flex-wrap: wrap;
         }
-        .tm-layout {
-          max-width: 1280px;
-          margin: 0 auto;
-          padding: 24px 20px 64px;
+        .tm-search-row {
+          display: flex;
+          gap: 10px;
+          align-items: stretch;
+          flex-wrap: wrap;
+        }
+        .tm-main-grid {
+          padding-top: 22px;
+          padding-bottom: 64px;
           display: grid;
-          grid-template-columns: 370px 1fr;
+          grid-template-columns: 360px 1fr;
           gap: 24px;
           align-items: start;
         }
@@ -517,15 +567,19 @@ export default function App() {
           position: sticky;
           top: 20px;
         }
-        .tm-grid-annunci {
+        .tm-cards-grid {
           display: grid;
           grid-template-columns: repeat(auto-fill, minmax(275px, 1fr));
           gap: 18px;
         }
         @media (max-width: 900px) {
-          .tm-layout {
+          .tm-container {
+            padding-left: 14px;
+            padding-right: 14px;
+          }
+          .tm-main-grid {
             grid-template-columns: 1fr;
-            padding: 18px 14px 60px;
+            padding-top: 16px;
           }
           .tm-sidebar {
             position: static;
@@ -533,15 +587,15 @@ export default function App() {
         }
       `}</style>
 
+      {/* HEADER AZIENDALE */}
       <header
         style={{
           background: 'linear-gradient(135deg, #1b365d 0%, #2563eb 100%)',
           color: '#fff',
-          padding: '18px 20px',
-          boxShadow: '0 4px 18px rgba(27, 54, 93, 0.16)',
+          padding: '16px 0',
         }}
       >
-        <div className="tm-header-inner">
+        <div className="tm-container tm-header-inner">
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <img
               src="/icona-tracolleghi.jpg"
@@ -563,14 +617,14 @@ export default function App() {
                   margin: 0,
                   fontFamily: fontHeading,
                   fontWeight: 800,
-                  fontSize: '1.5rem',
+                  fontSize: '1.45rem',
                   letterSpacing: '-0.03em',
                 }}
               >
                 TRACOLLEGHI <span style={{ color: '#93c5fd', fontWeight: 700 }}>Market</span>
               </h1>
-              <p style={{ margin: '2px 0 0', fontSize: '0.84rem', opacity: 0.9 }}>
-                Bacheca colleghi • Vendita, Regalo & Noleggio
+              <p style={{ margin: '2px 0 0', fontSize: '0.82rem', opacity: 0.92 }}>
+                Bacheca interna reparti • Badge / Mail aziendale • Welfare OK
               </p>
             </div>
           </div>
@@ -596,7 +650,9 @@ export default function App() {
               onClick={() => {
                 setAuthForm({
                   nome: userProfile.nome || '',
+                  badge: userProfile.badge || '',
                   email: userProfile.email || '',
+                  reparto: userProfile.reparto || REPARTI_AZIENDA[0],
                   fotoProfilo: userProfile.fotoProfilo || '',
                 });
                 setShowProfileModal(true);
@@ -613,7 +669,7 @@ export default function App() {
                 cursor: 'pointer',
                 fontFamily: fontBody,
                 fontWeight: 600,
-                fontSize: '0.86rem',
+                fontSize: '0.85rem',
               }}
             >
               {userProfile.fotoProfilo ? (
@@ -636,10 +692,14 @@ export default function App() {
                     fontWeight: 700,
                   }}
                 >
-                  {(userProfile.nome || 'U').charAt(0).toUpperCase()}
+                  {(userProfile.nome || 'B').charAt(0).toUpperCase()}
                 </span>
               )}
-              <span>{userProfile.registrato && userProfile.nome ? userProfile.nome : 'Registrati'}</span>
+              <span>
+                {userProfile.registrato && userProfile.nome
+                  ? `${userProfile.nome}${userProfile.badge ? ` • #${userProfile.badge}` : ''}`
+                  : 'Accedi con Badge / Mail'}
+              </span>
             </button>
 
             <button
@@ -654,7 +714,7 @@ export default function App() {
                 border: '1px solid rgba(255,255,255,0.28)',
                 background: 'rgba(255,255,255,0.16)',
                 color: '#fff',
-                fontSize: '1.2rem',
+                fontSize: '1.15rem',
                 cursor: 'pointer',
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -667,7 +727,118 @@ export default function App() {
         </div>
       </header>
 
-      <main className="tm-layout">
+      {/* FASCIA SUPERIORE: MACRO-CATEGORIE + BARRA DI RICERCA SUBITO SOTTO */}
+      <section
+        style={{
+          background: '#ffffff',
+          borderBottom: '1px solid #e2e8f0',
+          boxShadow: '0 4px 14px rgba(15, 23, 42, 0.04)',
+          padding: '14px 0 18px',
+        }}
+      >
+        <div className="tm-container">
+          {/* Riga 1: Macro-categorie */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
+            {MACRO_CATEGORIE.map((cat) => {
+              const attiva = filtroCategoria === cat.id;
+              return (
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={() => setFiltroCategoria(cat.id)}
+                  style={{
+                    fontFamily: fontHeading,
+                    fontWeight: 700,
+                    fontSize: '0.84rem',
+                    padding: '8px 14px',
+                    borderRadius: '12px',
+                    border: attiva ? '1px solid #1b365d' : '1px solid #e2e8f0',
+                    background: attiva ? '#1b365d' : '#f8fafc',
+                    color: attiva ? '#fff' : '#334155',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                  }}
+                >
+                  <span>{cat.icon}</span>
+                  <span>{cat.label}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Riga 2: Barra di ricerca subito sotto alle macro-categorie */}
+          <div className="tm-search-row">
+            <div style={{ position: 'relative', flex: '1 1 320px' }}>
+              <input
+                type="search"
+                placeholder="Cosa stai cercando tra i colleghi? (es. Bici, Trapano, Passeggino, Reparto...)"
+                value={ricerca}
+                onChange={(e) => setRicerca(e.target.value)}
+                style={{
+                  width: '100%',
+                  boxSizing: 'border-box',
+                  padding: '12px 16px',
+                  borderRadius: '12px',
+                  border: '2px solid #cbd5e1',
+                  fontFamily: fontBody,
+                  fontSize: '0.96rem',
+                  background: '#f8fafc',
+                }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center' }}>
+              {TIPI_ANNUNCIO.map((tipo) => {
+                const attivo = filtroTipo === tipo;
+                return (
+                  <button
+                    key={tipo}
+                    type="button"
+                    onClick={() => setFiltroTipo(tipo)}
+                    style={{
+                      fontFamily: fontHeading,
+                      fontWeight: 700,
+                      fontSize: '0.8rem',
+                      padding: '10px 13px',
+                      borderRadius: '11px',
+                      border: attivo ? '1px solid #2563eb' : '1px solid #dbe2ec',
+                      background: attivo ? '#eff6ff' : '#fff',
+                      color: attivo ? '#1d4ed8' : '#475569',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {tipo}
+                  </button>
+                );
+              })}
+
+              <button
+                type="button"
+                onClick={() => setSoloWelfare((prev) => !prev)}
+                style={{
+                  fontFamily: fontHeading,
+                  fontWeight: 700,
+                  fontSize: '0.8rem',
+                  padding: '10px 13px',
+                  borderRadius: '11px',
+                  border: soloWelfare ? '1px solid #059669' : '1px solid #dbe2ec',
+                  background: soloWelfare ? '#ecfdf5' : '#fff',
+                  color: soloWelfare ? '#047857' : '#475569',
+                  cursor: 'pointer',
+                }}
+              >
+                🎟️ Solo Welfare OK
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* CORPO PRINCIPALE */}
+      <main className="tm-container tm-main-grid">
+        {/* COLONNA SINISTRA: PUBBLICA ANNUNCIO */}
         <aside className="tm-sidebar">
           {avviso && (
             <div
@@ -706,9 +877,25 @@ export default function App() {
               boxShadow: '0 2px 12px rgba(15, 23, 42, 0.05)',
             }}
           >
-            <h2 style={{ margin: '0 0 14px', fontFamily: fontHeading, fontSize: '1.15rem', color: '#1b365d' }}>
-              Pubblica un annuncio
-            </h2>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <h2 style={{ margin: 0, fontFamily: fontHeading, fontSize: '1.12rem', color: '#1b365d' }}>
+                Pubblica un annuncio
+              </h2>
+              {userProfile.reparto && userProfile.registrato && (
+                <span
+                  style={{
+                    fontSize: '0.72rem',
+                    fontWeight: 700,
+                    background: '#eff6ff',
+                    color: '#1d4ed8',
+                    padding: '3px 8px',
+                    borderRadius: '8px',
+                  }}
+                >
+                  {userProfile.reparto}
+                </span>
+              )}
+            </div>
 
             <form onSubmit={handleSubmitAnnuncio} style={{ display: 'flex', flexDirection: 'column', gap: '11px' }}>
               <input
@@ -757,8 +944,34 @@ export default function App() {
                 />
               )}
 
+              {/* Opzione Welfare aziendale */}
+              {tipoAnnuncio !== 'In regalo' && (
+                <label
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '9px',
+                    background: accettaWelfare ? '#ecfdf5' : '#f8fafc',
+                    border: accettaWelfare ? '1px solid #10b981' : '1px solid #e2e8f0',
+                    padding: '9px 12px',
+                    borderRadius: '10px',
+                    cursor: 'pointer',
+                    fontSize: '0.84rem',
+                    fontWeight: 600,
+                    color: accettaWelfare ? '#065f46' : '#334155',
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={accettaWelfare}
+                    onChange={(e) => setAccettaWelfare(e.target.checked)}
+                  />
+                  <span>🎟️ Accetto anche Welfare aziendale / Buoni</span>
+                </label>
+              )}
+
               <textarea
-                placeholder="Descrivi l'oggetto, le condizioni e come ritirarlo..."
+                placeholder="Descrivi l'oggetto, le condizioni e come ritirarlo in azienda..."
                 value={descrizione}
                 onChange={(e) => setDescrizione(e.target.value)}
                 rows={3}
@@ -856,142 +1069,88 @@ export default function App() {
           </section>
         </aside>
 
-        <div>
-          <section
-            style={{
-              background: '#fff',
-              borderRadius: '16px',
-              padding: '18px',
-              marginBottom: '20px',
-              boxShadow: '0 2px 12px rgba(15, 23, 42, 0.05)',
-            }}
-          >
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
-              {CATEGORIE.map((cat) => {
-                const attiva = filtroCategoria === cat;
-                return (
-                  <button
-                    key={cat}
-                    type="button"
-                    onClick={() => setFiltroCategoria(cat)}
-                    style={{
-                      fontFamily: fontHeading,
-                      fontWeight: 700,
-                      fontSize: '0.84rem',
-                      letterSpacing: '0.01em',
-                      padding: '8px 14px',
-                      borderRadius: '999px',
-                      border: attiva ? 'none' : '1px solid #dbe2ec',
-                      background: attiva ? '#1b365d' : '#f8fafc',
-                      color: attiva ? '#fff' : '#334155',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    {cat}
-                  </button>
-                );
-              })}
+        {/* COLONNA DESTRA: BACHECA ANNUNCI */}
+        <section className="tm-cards-grid">
+          {annunciFiltrati.length === 0 ? (
+            <div
+              style={{
+                background: '#fff',
+                borderRadius: '16px',
+                padding: '28px',
+                textAlign: 'center',
+                color: '#64748b',
+                gridColumn: '1 / -1',
+              }}
+            >
+              Nessun annuncio trovato con i filtri selezionati.
             </div>
+          ) : (
+            annunciFiltrati.map((item) => {
+              const foto = normalizeImages(item);
+              const isWelfare = Boolean(item.welfare) || /\[welfare ok\]/i.test(item.descrizione || '');
+              const descrizionePulita = (item.descrizione || '').replace(/\s*\[WELFARE OK\]\s*/gi, '').trim();
+              const isOwner =
+                userProfile.nome &&
+                String(item.autore || '')
+                  .trim()
+                  .toLowerCase()
+                  .startsWith(userProfile.nome.trim().toLowerCase());
 
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center' }}>
-              {TIPI_ANNUNCIO.map((tipo) => {
-                const attivo = filtroTipo === tipo;
-                return (
-                  <button
-                    key={tipo}
-                    type="button"
-                    onClick={() => setFiltroTipo(tipo)}
-                    style={{
-                      fontFamily: fontHeading,
-                      fontWeight: 700,
-                      fontSize: '0.8rem',
-                      padding: '6px 12px',
-                      borderRadius: '10px',
-                      border: attivo ? '1px solid #2563eb' : '1px solid #e2e8f0',
-                      background: attivo ? '#eff6ff' : '#fff',
-                      color: attivo ? '#1d4ed8' : '#475569',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    {tipo}
-                  </button>
-                );
-              })}
+              return (
+                <article
+                  key={item.id}
+                  style={{
+                    background: '#fff',
+                    borderRadius: '16px',
+                    overflow: 'hidden',
+                    boxShadow: '0 2px 12px rgba(15, 23, 42, 0.05)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                  }}
+                >
+                  <div>
+                    {foto.length > 0 && (
+                      <div
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: foto.length === 1 ? '1fr' : 'repeat(2, 1fr)',
+                          gap: '2px',
+                          background: '#e2e8f0',
+                        }}
+                      >
+                        {foto.map((src, i) => (
+                          <img
+                            key={i}
+                            src={src}
+                            alt={`${item.titolo} ${i + 1}`}
+                            style={{
+                              width: '100%',
+                              height: foto.length === 1 ? '185px' : '94px',
+                              objectFit: 'cover',
+                              display: 'block',
+                            }}
+                          />
+                        ))}
+                      </div>
+                    )}
 
-              <input
-                type="search"
-                placeholder="Cerca oggetto o collega..."
-                value={ricerca}
-                onChange={(e) => setRicerca(e.target.value)}
-                style={{
-                  flex: '1 1 200px',
-                  padding: '8px 12px',
-                  borderRadius: '10px',
-                  border: '1px solid #cbd5e1',
-                  fontFamily: fontBody,
-                  fontSize: '0.9rem',
-                }}
-              />
-            </div>
-          </section>
-
-          <section className="tm-grid-annunci">
-            {annunciFiltrati.length === 0 ? (
-              <p style={{ color: '#64748b', gridColumn: '1 / -1' }}>
-                Nessun annuncio trovato con i filtri selezionati.
-              </p>
-            ) : (
-              annunciFiltrati.map((item) => {
-                const foto = normalizeImages(item);
-                const isOwner =
-                  userProfile.nome &&
-                  String(item.autore || '').trim().toLowerCase() === userProfile.nome.trim().toLowerCase();
-
-                return (
-                  <article
-                    key={item.id}
-                    style={{
-                      background: '#fff',
-                      borderRadius: '16px',
-                      overflow: 'hidden',
-                      boxShadow: '0 2px 12px rgba(15, 23, 42, 0.05)',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      justifyContent: 'space-between',
-                    }}
-                  >
-                    <div>
-                      {foto.length > 0 && (
-                        <div
-                          style={{
-                            display: 'grid',
-                            gridTemplateColumns: foto.length === 1 ? '1fr' : 'repeat(2, 1fr)',
-                            gap: '2px',
-                            background: '#e2e8f0',
-                          }}
-                        >
-                          {foto.map((src, i) => (
-                            <img
-                              key={i}
-                              src={src}
-                              alt={`${item.titolo} ${i + 1}`}
-                              style={{
-                                width: '100%',
-                                height: foto.length === 1 ? '185px' : '94px',
-                                objectFit: 'cover',
-                                display: 'block',
-                              }}
-                            />
-                          ))}
-                        </div>
-                      )}
-
-                      <div style={{ padding: '14px 16px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', marginBottom: '6px' }}>
+                    <div style={{ padding: '14px 16px' }}>
+                      <div
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          flexWrap: 'wrap',
+                          gap: '6px',
+                          marginBottom: '6px',
+                        }}
+                      >
+                        <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
                           <span
                             style={{
                               fontFamily: fontHeading,
-                              fontSize: '0.74rem',
+                              fontSize: '0.72rem',
                               fontWeight: 700,
                               background: '#eff6ff',
                               color: '#1d4ed8',
@@ -1001,93 +1160,119 @@ export default function App() {
                           >
                             {item.categoria || 'Generale'}
                           </span>
-                          <span style={{ fontWeight: 700, color: '#0f766e', fontSize: '0.92rem' }}>
-                            {item.tipo === 'In regalo' || item.prezzo === 0
-                              ? 'IN REGALO'
-                              : item.prezzo != null
-                              ? `€ ${item.prezzo}${item.tipo === 'A noleggio' ? '/gg' : ''}`
-                              : item.tipo || 'In vendita'}
-                          </span>
+                          {isWelfare && (
+                            <span
+                              style={{
+                                fontFamily: fontHeading,
+                                fontSize: '0.72rem',
+                                fontWeight: 700,
+                                background: '#ecfdf5',
+                                color: '#047857',
+                                padding: '3px 9px',
+                                borderRadius: '999px',
+                              }}
+                            >
+                              🎟️ Welfare OK
+                            </span>
+                          )}
                         </div>
 
-                        <h3 style={{ margin: '6px 0', fontFamily: fontHeading, fontSize: '1.08rem' }}>{item.titolo}</h3>
-                        <p style={{ margin: 0, color: '#475569', fontSize: '0.9rem', lineHeight: 1.45 }}>
-                          {item.descrizione}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div
-                      style={{
-                        padding: '12px 16px',
-                        borderTop: '1px solid #f1f5f9',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        gap: '8px',
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        {item.autore_foto ? (
-                          <img
-                            src={item.autore_foto}
-                            alt={item.autore}
-                            style={{ width: '26px', height: '26px', borderRadius: '50%', objectFit: 'cover' }}
-                          />
-                        ) : null}
-                        <span style={{ fontSize: '0.84rem', fontWeight: 600, color: '#334155' }}>
-                          {item.autore || 'Collega'}
+                        <span style={{ fontWeight: 700, color: '#0f766e', fontSize: '0.94rem' }}>
+                          {item.tipo === 'In regalo' || item.prezzo === 0
+                            ? 'IN REGALO'
+                            : item.prezzo != null
+                            ? `€ ${item.prezzo}${item.tipo === 'A noleggio' ? '/gg' : ''}`
+                            : item.tipo || 'In vendita'}
                         </span>
                       </div>
 
-                      <div style={{ display: 'flex', gap: '6px' }}>
-                        {!isOwner && item.autore && (
-                          <button
-                            type="button"
-                            onClick={() => apriChatPrivata(item, item.autore)}
-                            style={{
-                              background: '#1b365d',
-                              color: '#fff',
-                              border: 'none',
-                              borderRadius: '9px',
-                              padding: '6px 11px',
-                              fontSize: '0.8rem',
-                              fontWeight: 600,
-                              cursor: 'pointer',
-                            }}
-                          >
-                            Chatta
-                          </button>
-                        )}
-
-                        {isOwner && (
-                          <button
-                            type="button"
-                            onClick={() => setAnnuncioDaEliminare(item)}
-                            style={{
-                              background: '#fee2e2',
-                              color: '#b91c1c',
-                              border: 'none',
-                              borderRadius: '9px',
-                              padding: '6px 10px',
-                              fontSize: '0.8rem',
-                              fontWeight: 600,
-                              cursor: 'pointer',
-                            }}
-                          >
-                            Elimina
-                          </button>
-                        )}
-                      </div>
+                      <h3 style={{ margin: '6px 0', fontFamily: fontHeading, fontSize: '1.08rem' }}>{item.titolo}</h3>
+                      <p style={{ margin: 0, color: '#475569', fontSize: '0.9rem', lineHeight: 1.45 }}>
+                        {descrizionePulita}
+                      </p>
                     </div>
-                  </article>
-                );
-              })
-            )}
-          </section>
-        </div>
+                  </div>
+
+                  <div
+                    style={{
+                      padding: '12px 16px',
+                      borderTop: '1px solid #f1f5f9',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '8px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                      {item.autore_foto ? (
+                        <img
+                          src={item.autore_foto}
+                          alt={item.autore}
+                          style={{ width: '26px', height: '26px', borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }}
+                        />
+                      ) : null}
+                      <span
+                        style={{
+                          fontSize: '0.82rem',
+                          fontWeight: 600,
+                          color: '#334155',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {item.autore || 'Collega'}
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                      {!isOwner && item.autore && (
+                        <button
+                          type="button"
+                          onClick={() => apriChatPrivata(item, item.autore)}
+                          style={{
+                            background: '#1b365d',
+                            color: '#fff',
+                            border: 'none',
+                            borderRadius: '9px',
+                            padding: '6px 11px',
+                            fontSize: '0.8rem',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          Chatta
+                        </button>
+                      )}
+
+                      {isOwner && (
+                        <button
+                          type="button"
+                          onClick={() => setAnnuncioDaEliminare(item)}
+                          style={{
+                            background: '#fee2e2',
+                            color: '#b91c1c',
+                            border: 'none',
+                            borderRadius: '9px',
+                            padding: '6px 10px',
+                            fontSize: '0.8rem',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          Elimina
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </article>
+              );
+            })
+          )}
+        </section>
       </main>
 
+      {/* MODALE CONFERMA ELIMINAZIONE */}
       {annuncioDaEliminare && (
         <div
           style={{
@@ -1141,6 +1326,7 @@ export default function App() {
         </div>
       )}
 
+      {/* MODALE REGISTRAZIONE BADGE / MAIL AZIENDALE E REPARTO */}
       {showProfileModal && (
         <div
           style={{
@@ -1160,27 +1346,32 @@ export default function App() {
               background: '#fff',
               borderRadius: '16px',
               padding: '22px',
-              maxWidth: '400px',
+              maxWidth: '420px',
               width: '100%',
               display: 'flex',
               flexDirection: 'column',
               gap: '12px',
             }}
           >
-            <h3 style={{ margin: 0, fontFamily: fontHeading }}>Registrazione & Profilo</h3>
+            <div>
+              <h3 style={{ margin: 0, fontFamily: fontHeading, color: '#1b365d' }}>Accesso Colleghi & Reparto</h3>
+              <p style={{ margin: '4px 0 0', fontSize: '0.82rem', color: '#64748b' }}>
+                Inserisci il tuo numero di Badge o la mail aziendale per partecipare alla bacheca interna.
+              </p>
+            </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
               {authForm.fotoProfilo ? (
                 <img
                   src={authForm.fotoProfilo}
                   alt="Foto profilo"
-                  style={{ width: '56px', height: '56px', borderRadius: '50%', objectFit: 'cover' }}
+                  style={{ width: '54px', height: '54px', borderRadius: '50%', objectFit: 'cover' }}
                 />
               ) : (
                 <div
                   style={{
-                    width: '56px',
-                    height: '56px',
+                    width: '54px',
+                    height: '54px',
                     borderRadius: '50%',
                     background: '#e2e8f0',
                     display: 'flex',
@@ -1189,36 +1380,63 @@ export default function App() {
                     fontSize: '1.3rem',
                   }}
                 >
-                  👤
+                  🪪
                 </div>
               )}
-              <label style={{ fontSize: '0.86rem', fontWeight: 600, color: '#2563eb', cursor: 'pointer' }}>
-                Scegli foto profilo
+              <label style={{ fontSize: '0.85rem', fontWeight: 600, color: '#2563eb', cursor: 'pointer' }}>
+                Carica foto profilo
                 <input type="file" accept="image/*" onChange={handleFotoProfiloChange} style={{ display: 'none' }} />
               </label>
             </div>
 
             <input
               type="text"
-              placeholder="Nome e Cognome"
+              placeholder="Nome e Cognome *"
               value={authForm.nome}
               onChange={(e) => setAuthForm((prev) => ({ ...prev, nome: e.target.value }))}
               required
-              style={{ padding: '10px 12px', borderRadius: '10px', border: '1px solid #cbd5e1' }}
+              style={{ padding: '10px 12px', borderRadius: '10px', border: '1px solid #cbd5e1', fontFamily: fontBody }}
             />
+
+            <select
+              value={authForm.reparto}
+              onChange={(e) => setAuthForm((prev) => ({ ...prev, reparto: e.target.value }))}
+              style={{ padding: '10px 12px', borderRadius: '10px', border: '1px solid #cbd5e1', fontFamily: fontBody }}
+            >
+              {REPARTI_AZIENDA.map((rep) => (
+                <option key={rep} value={rep}>
+                  Reparto: {rep}
+                </option>
+              ))}
+            </select>
+
+            <input
+              type="text"
+              placeholder="Numero Badge aziendale (es. 1042)"
+              value={authForm.badge}
+              onChange={(e) => setAuthForm((prev) => ({ ...prev, badge: e.target.value }))}
+              style={{ padding: '10px 12px', borderRadius: '10px', border: '1px solid #cbd5e1', fontFamily: fontBody }}
+            />
+
             <input
               type="email"
-              placeholder="Email aziendale (opzionale)"
+              placeholder="Email aziendale (es. nome.cognome@trigano.it)"
               value={authForm.email}
               onChange={(e) => setAuthForm((prev) => ({ ...prev, email: e.target.value }))}
-              style={{ padding: '10px 12px', borderRadius: '10px', border: '1px solid #cbd5e1' }}
+              style={{ padding: '10px 12px', borderRadius: '10px', border: '1px solid #cbd5e1', fontFamily: fontBody }}
             />
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '6px' }}>
               <button
                 type="button"
                 onClick={() => setShowProfileModal(false)}
-                style={{ padding: '8px 14px', borderRadius: '10px', border: '1px solid #cbd5e1', background: '#fff' }}
+                style={{
+                  padding: '8px 14px',
+                  borderRadius: '10px',
+                  border: '1px solid #cbd5e1',
+                  background: '#fff',
+                  cursor: 'pointer',
+                }}
               >
                 Chiudi
               </button>
@@ -1231,6 +1449,7 @@ export default function App() {
                   background: '#2563eb',
                   color: '#fff',
                   fontWeight: 700,
+                  cursor: 'pointer',
                 }}
               >
                 Salva profilo
@@ -1240,6 +1459,7 @@ export default function App() {
         </div>
       )}
 
+      {/* MODALE IMPOSTAZIONI */}
       {showSettingsModal && (
         <div
           style={{
@@ -1331,6 +1551,7 @@ export default function App() {
         </div>
       )}
 
+      {/* CHAT PRIVATA 1-A-1 */}
       {chatAperta && (
         <div
           style={{
