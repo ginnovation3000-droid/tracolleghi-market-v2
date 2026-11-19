@@ -36,6 +36,10 @@ const SUONERIE = [
   { id: 'silent', label: 'Silenzioso' },
 ];
 
+function extractBaseName(value) {
+  return String(value || '').split(' • ')[0].trim();
+}
+
 function playNotificationSound(soundId = 'chime') {
   if (!soundId || soundId === 'silent') return;
   try {
@@ -111,7 +115,10 @@ function normalizeImages(item) {
 }
 
 function buildThreadKey(annuncioId, userA, userB) {
-  const pair = [String(userA || '').trim().toLowerCase(), String(userB || '').trim().toLowerCase()].sort();
+  const pair = [
+    extractBaseName(userA).toLowerCase(),
+    extractBaseName(userB).toLowerCase(),
+  ].sort();
   return `${annuncioId}__${pair[0]}__${pair[1]}`;
 }
 
@@ -187,7 +194,7 @@ export default function App() {
     }
   });
   const [showSettingsModal, setShowSettingsModal] = useState(false);
-  const [settingsTab, setSettingsTab] = useState('miei_annunci'); // 'miei_annunci' | 'preferenze'
+  const [settingsTab, setSettingsTab] = useState('miei_annunci');
 
   // Modifica annuncio da "I miei annunci"
   const [annuncioInModifica, setAnnuncioInModifica] = useState(null);
@@ -288,11 +295,12 @@ export default function App() {
       const lista = data || [];
       if (playSoundIfNew && lista.length > prevMsgCountRef.current) {
         const ultimo = lista[lista.length - 1];
-        const mioNome = (userProfile.nome || '').trim().toLowerCase();
-        const isDestinatario =
-          !ultimo.destinatario || String(ultimo.destinatario || '').trim().toLowerCase() === mioNome;
+        const mioNome = extractBaseName(userProfile.nome).toLowerCase();
+        const destNome = extractBaseName(ultimo.destinatario).toLowerCase();
+        const mittNome = extractBaseName(ultimo.mittente).toLowerCase();
+        const isDestinatario = !destNome || destNome === mioNome;
 
-        if (ultimo && mioNome && String(ultimo.mittente || '').trim().toLowerCase() !== mioNome && isDestinatario) {
+        if (ultimo && mioNome && mittNome !== mioNome && isDestinatario) {
           if (settings.notificheAttive) {
             playNotificationSound(settings.suoneria);
           }
@@ -309,7 +317,7 @@ export default function App() {
   useEffect(() => {
     const timer = setInterval(() => {
       fetchMessaggi(true);
-    }, 10000);
+    }, 8000);
     return () => clearInterval(timer);
   }, [userProfile.nome, settings.notificheAttive, settings.suoneria]);
 
@@ -335,7 +343,7 @@ export default function App() {
       return;
     }
     const updated = {
-      nome: authForm.nome.trim(),
+      nome: extractBaseName(authForm.nome),
       badge: authForm.badge.trim(),
       email: authForm.email.trim(),
       reparto: authForm.reparto || REPARTI_AZIENDA[0],
@@ -404,6 +412,7 @@ export default function App() {
         : null;
 
     const tagWelfare = accettaWelfare ? ' [WELFARE OK]' : '';
+    const nomePulito = extractBaseName(userProfile.nome);
     const infoReparto = userProfile.reparto ? ` • ${userProfile.reparto}` : '';
 
     const payload = {
@@ -414,7 +423,7 @@ export default function App() {
       tipo: tipoAnnuncio,
       welfare: accettaWelfare,
       reparto: userProfile.reparto || '',
-      autore: `${userProfile.nome.trim()}${infoReparto}`,
+      autore: `${nomePulito}${infoReparto}`,
       autore_foto: userProfile.fotoProfilo || '',
       immagine: fotoAnnuncio.length > 0 ? JSON.stringify(fotoAnnuncio) : null,
     };
@@ -439,15 +448,11 @@ export default function App() {
     }
   }
 
-  // I miei annunci (filtrati sul profilo attuale)
   const mieiAnnunci = useMemo(() => {
     if (!userProfile.nome || !userProfile.nome.trim()) return [];
-    const mioNome = userProfile.nome.trim().toLowerCase();
-    return annunci.filter((item) =>
-      String(item.autore || '')
-        .trim()
-        .toLowerCase()
-        .startsWith(mioNome)
+    const mioNome = extractBaseName(userProfile.nome).toLowerCase();
+    return annunci.filter(
+      (item) => extractBaseName(item.autore).toLowerCase() === mioNome
     );
   }, [annunci, userProfile.nome]);
 
@@ -577,7 +582,6 @@ export default function App() {
     }
   }
 
-  // Filtraggio combinato: Macro-categoria, Ricerca, Tipo, Welfare
   const annunciFiltrati = useMemo(() => {
     return annunci.filter((item) => {
       const okCat = filtroCategoria === 'Tutte' || item.categoria === filtroCategoria;
@@ -603,17 +607,41 @@ export default function App() {
     });
   }, [annunci, filtroCategoria, filtroTipo, soloWelfare, ricerca]);
 
+  // Calcola per ogni annuncio dell'utente i colleghi che hanno scritto
+  function getMittentiRicevuti(annuncioId) {
+    const mioNome = extractBaseName(userProfile.nome).toLowerCase();
+    if (!mioNome) return [];
+    const visti = new Set();
+    const mittenti = [];
+    for (const m of messaggi) {
+      if (String(m.annuncio_id) !== String(annuncioId)) continue;
+      const mittPulito = extractBaseName(m.mittente);
+      const destPulito = extractBaseName(m.destinatario);
+      if (mittPulito && mittPulito.toLowerCase() !== mioNome && (!destPulito || destPulito.toLowerCase() === mioNome)) {
+        const key = mittPulito.toLowerCase();
+        if (!visti.has(key)) {
+          visti.add(key);
+          mittenti.push(mittPulito);
+        }
+      }
+    }
+    return mittenti;
+  }
+
   const messaggiChatAttiva = useMemo(() => {
     if (!chatAperta || !userProfile.nome) return [];
-    const key = buildThreadKey(chatAperta.annuncio.id, userProfile.nome, chatAperta.altroUtente);
+    const mioNome = extractBaseName(userProfile.nome).toLowerCase();
+    const altroNome = extractBaseName(chatAperta.altroUtente).toLowerCase();
+    const key = buildThreadKey(chatAperta.annuncio.id, mioNome, altroNome);
+
     return messaggi.filter((m) => {
       if (m.thread_key) return m.thread_key === key;
       const sameItem = String(m.annuncio_id) === String(chatAperta.annuncio.id);
-      const pair = [String(m.mittente || '').toLowerCase(), String(m.destinatario || '').toLowerCase()].sort();
-      const expectedPair = [
-        String(userProfile.nome || '').toLowerCase(),
-        String(chatAperta.altroUtente || '').toLowerCase(),
+      const pair = [
+        extractBaseName(m.mittente).toLowerCase(),
+        extractBaseName(m.destinatario).toLowerCase(),
       ].sort();
+      const expectedPair = [mioNome, altroNome].sort();
       return sameItem && pair[0] === expectedPair[0] && pair[1] === expectedPair[1];
     });
   }, [messaggi, chatAperta, userProfile.nome]);
@@ -624,7 +652,8 @@ export default function App() {
       setErrore('Registrati prima con Badge o Email aziendale per avviare una chat privata.');
       return;
     }
-    setChatAperta({ annuncio, altroUtente });
+    const nomePulito = extractBaseName(altroUtente);
+    setChatAperta({ annuncio, altroUtente: nomePulito });
     setSettings((prev) => ({ ...prev, badgeNonLetti: 0 }));
     fetchMessaggi(false);
   }
@@ -634,12 +663,12 @@ export default function App() {
     if (!nuovoMessaggio.trim() || !chatAperta || !userProfile.nome.trim()) return;
     setInvioMessaggio(true);
 
-    const mittente = userProfile.nome.trim();
-    const destinatario = chatAperta.altroUtente.trim();
+    const mittente = extractBaseName(userProfile.nome);
+    const destinatario = extractBaseName(chatAperta.altroUtente);
     const threadKey = buildThreadKey(chatAperta.annuncio.id, mittente, destinatario);
 
     const record = {
-      annuncio_id: chatAperta.annuncio.id,
+      annuncio_id: String(chatAperta.annuncio.id),
       thread_key: threadKey,
       mittente,
       destinatario,
@@ -649,6 +678,7 @@ export default function App() {
     try {
       const { data, error } = await supabase.from('messaggi').insert([record]).select();
       if (error) {
+        setErrore('Errore invio messaggio: ' + error.message);
         setMessaggi((prev) => [...prev, { ...record, id: Date.now(), created_at: new Date().toISOString() }]);
       } else if (data) {
         setMessaggi((prev) => [...prev, ...data]);
@@ -737,7 +767,6 @@ export default function App() {
         }}
       >
         <div className="tm-container">
-          {/* Barra azioni rapida in alto a destra */}
           <div
             style={{
               display: 'flex',
@@ -871,7 +900,6 @@ export default function App() {
             </button>
           </div>
 
-          {/* Blocco centrale: Logo grande, titolo e descrizione sotto */}
           <div
             style={{
               display: 'flex',
@@ -888,13 +916,12 @@ export default function App() {
                 e.currentTarget.style.display = 'none';
               }}
               style={{
-                width: '84px',
-                height: '84px',
+                width: '88px',
+                height: '88px',
                 borderRadius: '22px',
                 objectFit: 'cover',
-                background: '#fff',
-                border: '3px solid rgba(255,255,255,0.85)',
-                boxShadow: '0 10px 24px rgba(0, 0, 0, 0.24)',
+                display: 'block',
+                boxShadow: '0 10px 24px rgba(0, 0, 0, 0.28)',
               }}
             />
 
@@ -926,7 +953,7 @@ export default function App() {
         </div>
       </header>
 
-      {/* FASCIA SUPERIORE: MACRO-CATEGORIE + BARRA DI RICERCA SUBITO SOTTO */}
+      {/* FASCIA SUPERIORE: MACRO-CATEGORIE + BARRA DI RICERCA */}
       <section
         style={{
           background: '#ffffff',
@@ -936,7 +963,6 @@ export default function App() {
         }}
       >
         <div className="tm-container">
-          {/* Riga 1: Macro-categorie affiancate in celle singole con icona */}
           <div className="tm-categories-strip">
             {MACRO_CATEGORIE.map((cat) => {
               const attiva = filtroCategoria === cat.id;
@@ -968,7 +994,6 @@ export default function App() {
             })}
           </div>
 
-          {/* Riga 2: Barra di ricerca subito sotto alle macro-categorie */}
           <div className="tm-search-row">
             <div style={{ position: 'relative', flex: '1 1 320px' }}>
               <input
@@ -1038,7 +1063,6 @@ export default function App() {
 
       {/* CORPO PRINCIPALE */}
       <main className="tm-container tm-main-grid">
-        {/* COLONNA SINISTRA: PUBBLICA ANNUNCIO */}
         <aside className="tm-sidebar">
           {avviso && (
             <div
@@ -1144,7 +1168,6 @@ export default function App() {
                 />
               )}
 
-              {/* Opzione Welfare aziendale */}
               {tipoAnnuncio !== 'In regalo' && (
                 <label
                   style={{
@@ -1269,7 +1292,7 @@ export default function App() {
           </section>
         </aside>
 
-        {/* COLONNA DESTRA: BACHECA ANNUNCI */}
+        {/* BACHECA ANNUNCI */}
         <section className="tm-cards-grid">
           {annunciFiltrati.length === 0 ? (
             <div
@@ -1290,12 +1313,10 @@ export default function App() {
               const isWelfare = Boolean(item.welfare) || /\[welfare ok\]/i.test(item.descrizione || '');
               const venduto = isAnnuncioVenduto(item);
               const descrizionePulita = cleanDescrizione(item.descrizione);
-              const isOwner =
-                userProfile.nome &&
-                String(item.autore || '')
-                  .trim()
-                  .toLowerCase()
-                  .startsWith(userProfile.nome.trim().toLowerCase());
+              const mioNome = extractBaseName(userProfile.nome).toLowerCase();
+              const autorePulito = extractBaseName(item.autore);
+              const isOwner = Boolean(mioNome && autorePulito.toLowerCase() === mioNome);
+              const mittentiRicevuti = isOwner ? getMittentiRicevuti(item.id) : [];
 
               return (
                 <article
@@ -1447,6 +1468,7 @@ export default function App() {
                       alignItems: 'center',
                       justifyContent: 'space-between',
                       gap: '8px',
+                      flexWrap: 'wrap',
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
@@ -1471,11 +1493,11 @@ export default function App() {
                       </span>
                     </div>
 
-                    <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
-                      {!isOwner && item.autore && !venduto && (
+                    <div style={{ display: 'flex', gap: '6px', flexShrink: 0, alignItems: 'center' }}>
+                      {!isOwner && autorePulito && !venduto && (
                         <button
                           type="button"
-                          onClick={() => apriChatPrivata(item, item.autore)}
+                          onClick={() => apriChatPrivata(item, autorePulito)}
                           style={{
                             background: '#1b365d',
                             color: '#fff',
@@ -1488,6 +1510,25 @@ export default function App() {
                           }}
                         >
                           Chatta
+                        </button>
+                      )}
+
+                      {isOwner && mittentiRicevuti.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => apriChatPrivata(item, mittentiRicevuti[0])}
+                          style={{
+                            background: '#2563eb',
+                            color: '#fff',
+                            border: 'none',
+                            borderRadius: '9px',
+                            padding: '6px 10px',
+                            fontSize: '0.78rem',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          💬 Chat ricevute ({mittentiRicevuti.length})
                         </button>
                       )}
 
@@ -1509,7 +1550,7 @@ export default function App() {
                             cursor: 'pointer',
                           }}
                         >
-                          Tuo annuncio
+                          Gestisci
                         </button>
                       )}
                     </div>
@@ -1747,7 +1788,6 @@ export default function App() {
               </button>
             </div>
 
-            {/* Schede navigazione: I miei annunci | Preferenze */}
             <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid #e2e8f0', paddingBottom: '10px' }}>
               <button
                 type="button"
@@ -1799,6 +1839,7 @@ export default function App() {
                   mieiAnnunci.map((item) => {
                     const venduto = isAnnuncioVenduto(item);
                     const foto = normalizeImages(item);
+                    const ricevuti = getMittentiRicevuti(item.id);
                     return (
                       <div
                         key={item.id}
@@ -1865,6 +1906,33 @@ export default function App() {
                             </div>
                           </div>
                         </div>
+
+                        {ricevuti.length > 0 && (
+                          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                            {ricevuti.map((mitt) => (
+                              <button
+                                key={mitt}
+                                type="button"
+                                onClick={() => {
+                                  setShowSettingsModal(false);
+                                  apriChatPrivata(item, mitt);
+                                }}
+                                style={{
+                                  padding: '5px 10px',
+                                  borderRadius: '8px',
+                                  border: '1px solid #bfdbfe',
+                                  background: '#eff6ff',
+                                  color: '#1d4ed8',
+                                  fontWeight: 700,
+                                  fontSize: '0.76rem',
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                💬 Chat con {mitt}
+                              </button>
+                            ))}
+                          </div>
+                        )}
 
                         <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                           <button
@@ -1995,7 +2063,7 @@ export default function App() {
         </div>
       )}
 
-      {/* MODALE MODIFICA ANNUNCIO (APERTO DA "I MIEI ANNUNCI") */}
+      {/* MODALE MODIFICA ANNUNCIO */}
       {annuncioInModifica && (
         <div
           style={{
@@ -2231,7 +2299,7 @@ export default function App() {
                 </p>
               ) : (
                 messaggiChatAttiva.map((m, idx) => {
-                  const mio = String(m.mittente || '').toLowerCase() === String(userProfile.nome || '').toLowerCase();
+                  const mio = extractBaseName(m.mittente).toLowerCase() === extractBaseName(userProfile.nome).toLowerCase();
                   return (
                     <div
                       key={m.id || idx}
