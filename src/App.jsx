@@ -858,70 +858,63 @@ export default function App() {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          gap: 8px;
-          min-width: 0;
+          gap: 16px;
         }
         .tm-header-brand {
           display: flex;
           align-items: center;
-          gap: 9px;
-          flex: 1 1 auto;
-          min-width: 0;
+          gap: 12px;
+          flex-shrink: 0;
         }
         .tm-header-logo {
-          width: 40px;
-          height: 40px;
-          border-radius: 11px;
+          width: 46px;
+          height: 46px;
+          border-radius: 12px;
           object-fit: cover;
           display: block;
           flex-shrink: 0;
-          box-shadow: 0 3px 10px rgba(0, 0, 0, 0.22);
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.24);
         }
         .tm-header-title-wrap {
-          min-width: 0;
-          flex: 1 1 auto;
+          flex-shrink: 0;
         }
         .tm-header-title {
           margin: 0;
           font-family: ${fontHeading};
           font-weight: 800;
-          font-size: clamp(0.96rem, 2.4vw, 1.42rem);
+          font-size: 1.42rem;
           letter-spacing: -0.02em;
-          line-height: 1.08;
-          display: flex;
-          flex-wrap: wrap;
-          align-items: baseline;
-          gap: 0 6px;
+          line-height: 1.1;
+          white-space: nowrap;
         }
         .tm-header-subtitle {
-          margin: 2px 0 0;
-          font-size: 0.72rem;
-          color: rgba(255, 255, 255, 0.84);
+          margin: 3px 0 0;
+          font-size: 0.74rem;
+          color: rgba(255, 255, 255, 0.85);
           white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
         }
         .tm-header-actions {
           display: flex;
           align-items: center;
-          gap: 6px;
-          flex-shrink: 0;
+          justify-content: flex-end;
+          gap: 8px;
+          min-width: 0;
         }
         .tm-profile-btn {
           display: inline-flex;
           align-items: center;
-          gap: 6px;
+          gap: 7px;
           background: rgba(255, 255, 255, 0.16);
           color: #fff;
           border: 1px solid rgba(255, 255, 255, 0.28);
           border-radius: 999px;
-          padding: 4px 10px 4px 4px;
+          padding: 5px 12px 5px 5px;
           cursor: pointer;
           font-family: ${fontBody};
           font-weight: 600;
-          font-size: 0.78rem;
+          font-size: 0.82rem;
           backdrop-filter: blur(6px);
-          max-width: 145px;
+          max-width: 190px;
         }
         .tm-profile-label {
           overflow: hidden;
@@ -988,42 +981,52 @@ export default function App() {
         }
         @media (max-width: 900px) {
           .tm-container {
-            padding-left: 12px;
-            padding-right: 12px;
+            padding-left: 14px;
+            padding-right: 14px;
           }
           .tm-board-wrapper {
             padding-top: 14px;
             padding-bottom: 104px;
           }
-        }
-        @media (max-width: 600px) {
-          .tm-header-logo {
-            width: 36px;
-            height: 36px;
-            border-radius: 10px;
-          }
-          .tm-header-title {
-            font-size: 0.95rem;
-            flex-direction: column;
-            gap: 0;
-          }
           .tm-header-subtitle {
             display: none;
           }
+        }
+        @media (max-width: 640px) {
+          .tm-header-bar {
+            flex-direction: column;
+            align-items: stretch;
+            gap: 10px;
+          }
+          .tm-header-brand {
+            justify-content: flex-start;
+            width: 100%;
+          }
+          .tm-header-logo {
+            width: 44px;
+            height: 44px;
+          }
+          .tm-header-title {
+            font-size: 1.24rem;
+          }
+          .tm-header-actions {
+            width: 100%;
+            justify-content: space-between;
+            padding-top: 8px;
+            border-top: 1px solid rgba(255, 255, 255, 0.14);
+          }
           .tm-profile-btn {
-            max-width: 92px;
-            padding: 3px 8px 3px 3px;
-            font-size: 0.74rem;
+            max-width: calc(100% - 54px);
           }
         }
       `}</style>
 
-      {/* HEADER COMPATTO SENZA SOVRAPPOSIZIONI */}
+      {/* HEADER AMPIO E SENZA SOVRAPPOSIZIONI */}
       <header
         style={{
           background: 'linear-gradient(135deg, #13294b 0%, #1b365d 52%, #2563eb 100%)',
           color: '#fff',
-          padding: '10px 0',
+          padding: '12px 0',
           position: 'sticky',
           top: 0,
           zIndex: 40,
@@ -1042,8 +1045,7 @@ export default function App() {
             />
             <div className="tm-header-title-wrap">
               <h1 className="tm-header-title">
-                <span>TRACOLLEGHI</span>
-                <span style={{ color: '#93c5fd', fontWeight: 700 }}>Market</span>
+                TRACOLLEGHI <span style={{ color: '#93c5fd', fontWeight: 700 }}>Market</span>
               </h1>
               <p className="tm-header-subtitle">
                 Bacheca interna tra colleghi • Badge, Mail aziendale & Welfare OK
@@ -1052,65 +1054,69 @@ export default function App() {
           </div>
 
           <div className="tm-header-actions">
-            {settings.badgeNonLetti > 0 && (
-              <span
-                style={{
-                  background: '#ef4444',
-                  color: '#fff',
-                  fontSize: '0.72rem',
-                  fontWeight: 800,
-                  padding: '2px 7px',
-                  borderRadius: '999px',
-                  flexShrink: 0,
-                }}
-              >
-                {settings.badgeNonLetti}
-              </span>
-            )}
-
-            <button
-              type="button"
-              className="tm-profile-btn"
-              onClick={() => {
-                setAuthForm({
-                  nome: userProfile.nome || '',
-                  badge: userProfile.badge || '',
-                  email: userProfile.email || '',
-                  reparto: userProfile.reparto || REPARTI_AZIENDA[0],
-                  fotoProfilo: userProfile.fotoProfilo || '',
-                });
-                setShowProfileModal(true);
-              }}
-            >
-              {userProfile.fotoProfilo ? (
-                <img
-                  src={userProfile.fotoProfilo}
-                  alt={userProfile.nome || 'Profilo'}
-                  style={{ width: '23px', height: '23px', borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }}
-                />
-              ) : (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+              {settings.badgeNonLetti > 0 && (
                 <span
                   style={{
-                    width: '23px',
-                    height: '23px',
-                    borderRadius: '50%',
-                    background: '#ffffff',
-                    color: '#1b365d',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontWeight: 700,
-                    fontSize: '0.75rem',
+                    background: '#ef4444',
+                    color: '#fff',
+                    fontSize: '0.72rem',
+                    fontWeight: 800,
+                    padding: '2px 7px',
+                    borderRadius: '999px',
                     flexShrink: 0,
                   }}
                 >
-                  {(userProfile.nome || 'B').charAt(0).toUpperCase()}
+                  {settings.badgeNonLetti}
                 </span>
               )}
-              <span className="tm-profile-label">
-                {userProfile.registrato && userProfile.nome ? userProfile.nome : 'Accedi'}
-              </span>
-            </button>
+
+              <button
+                type="button"
+                className="tm-profile-btn"
+                onClick={() => {
+                  setAuthForm({
+                    nome: userProfile.nome || '',
+                    badge: userProfile.badge || '',
+                    email: userProfile.email || '',
+                    reparto: userProfile.reparto || REPARTI_AZIENDA[0],
+                    fotoProfilo: userProfile.fotoProfilo || '',
+                  });
+                  setShowProfileModal(true);
+                }}
+              >
+                {userProfile.fotoProfilo ? (
+                  <img
+                    src={userProfile.fotoProfilo}
+                    alt={userProfile.nome || 'Profilo'}
+                    style={{ width: '24px', height: '24px', borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }}
+                  />
+                ) : (
+                  <span
+                    style={{
+                      width: '24px',
+                      height: '24px',
+                      borderRadius: '50%',
+                      background: '#ffffff',
+                      color: '#1b365d',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontWeight: 700,
+                      fontSize: '0.76rem',
+                      flexShrink: 0,
+                    }}
+                  >
+                    {(userProfile.nome || 'B').charAt(0).toUpperCase()}
+                  </span>
+                )}
+                <span className="tm-profile-label">
+                  {userProfile.registrato && userProfile.nome
+                    ? `${userProfile.nome}${userProfile.badge ? ` • #${userProfile.badge}` : ''}`
+                    : 'Accedi con Badge'}
+                </span>
+              </button>
+            </div>
 
             <button
               type="button"
@@ -1121,13 +1127,13 @@ export default function App() {
                 setShowSettingsModal(true);
               }}
               style={{
-                width: '34px',
-                height: '34px',
+                width: '36px',
+                height: '36px',
                 borderRadius: '50%',
                 border: '1px solid rgba(255,255,255,0.28)',
                 background: 'rgba(255,255,255,0.16)',
                 color: '#fff',
-                fontSize: '1rem',
+                fontSize: '1.05rem',
                 cursor: 'pointer',
                 display: 'inline-flex',
                 alignItems: 'center',
