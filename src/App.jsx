@@ -1,10 +1,9 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
-// Credenziali Supabase del progetto
-const SUPABASE_URL = 'https://ajuynrryavcidskcxjal.supabase.co';
-const SUPABASE_KEY = 'sb_publishable_YQvIcQl-DbTD48tlMuIdGA_5EmW-fW_';
-
+// Credenziali Supabase del progetto tracolleghi-market (bkdmdiwqdbyimfpzzlcy)
+const SUPABASE_URL = 'https://bkdmdiwqdbyimfpzzlcy.supabase.co';
+const SUPABASE_KEY = sb_publishable_YQvIcQl-DbTD48tlMuIdGA_5EmW-fW_
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const MACRO_CATEGORIE = [
@@ -73,7 +72,7 @@ function playNotificationSound(soundId = 'chime') {
   }
 }
 
-function compressImageFile(file, maxWidth = 900, quality = 0.72) {
+function compressImageFile(file, maxWidth = 800, quality = 0.68) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (ev) => {
@@ -341,7 +340,7 @@ export default function App() {
 
     try {
       const elaborate = await Promise.all(
-        selezionate.map((file) => compressImageFile(file, 900, 0.7))
+        selezionate.map((file) => compressImageFile(file, 800, 0.68))
       );
       setFotoAnnuncio((prev) => [...prev, ...elaborate].slice(0, 4));
     } catch {
@@ -380,35 +379,21 @@ export default function App() {
     const tagWelfare = accettaWelfare ? ' [WELFARE OK]' : '';
     const infoReparto = userProfile.reparto ? ` • ${userProfile.reparto}` : '';
 
-    const payloadBase = {
+    const payload = {
       titolo: titolo.trim(),
       descrizione: `${descrizione.trim()}${tagWelfare}`,
       prezzo: prezzoNum,
       categoria,
-      autore: `${userProfile.nome.trim()}${infoReparto}`,
-    };
-
-    const payloadEsteso = {
-      ...payloadBase,
       tipo: tipoAnnuncio,
       welfare: accettaWelfare,
       reparto: userProfile.reparto || '',
-      immagine: JSON.stringify(fotoAnnuncio),
+      autore: `${userProfile.nome.trim()}${infoReparto}`,
       autore_foto: userProfile.fotoProfilo || '',
+      immagine: fotoAnnuncio.length > 0 ? JSON.stringify(fotoAnnuncio) : null,
     };
 
     try {
-      let { error } = await supabase.from('annunci').insert([payloadEsteso]);
-      if (error) {
-        const fallbackPayload = {
-          ...payloadBase,
-          descrizione: `[${tipoAnnuncio}] ${descrizione.trim()}${tagWelfare}`,
-          immagine: fotoAnnuncio[0] || null,
-        };
-        const resFallback = await supabase.from('annunci').insert([fallbackPayload]);
-        error = resFallback.error;
-      }
-
+      const { error } = await supabase.from('annunci').insert([payload]);
       if (error) throw error;
 
       setTitolo('');
