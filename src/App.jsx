@@ -3,7 +3,8 @@ import { createClient } from '@supabase/supabase-js';
 
 // Credenziali Supabase del progetto tracolleghi-market (bkdmdiwqdbyimfpzzlcy)
 const SUPABASE_URL = 'https://bkdmdiwqdbyimfpzzlcy.supabase.co';
-const SUPABASE_KEY = sb_publishable_YQvIcQl-DbTD48tlMuIdGA_5EmW-fW_
+const SUPABASE_KEY = 'sb_publishable_YQvIcQl-DbTD48tlMuIdGA_5EmW-fW_';
+
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const MACRO_CATEGORIE = [
