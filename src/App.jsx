@@ -238,6 +238,7 @@ function normalizeRepartoMatch(rawReparto) {
   return partial || REPARTI_AZIENDA[0];
 }
 
+// Parser intelligente per elenco massivo badge (supporta CSV con ; o , o TAB o righe libere)
 function parseBulkBadgeText(rawText, defaultReparto = REPARTI_AZIENDA[0]) {
   const lines = String(rawText || '')
     .split(/\r?\n/)
@@ -357,8 +358,8 @@ async function sendSystemNotification(title, body, tag = 'tracolleghi-msg') {
 
   const options = {
     body,
-    icon: COMPANY_LOGO,
-    badge: COMPANY_LOGO,
+    icon: '/icona-tracolleghi.jpg',
+    badge: '/icona-tracolleghi.jpg',
     tag,
     renotify: true,
     vibrate: [180, 90, 180],
@@ -495,12 +496,14 @@ function renderStarsInline(media, totale) {
 }
 
 export default function App() {
+  // Stato aggiornamento Service Worker (nuova versione app disponibile)
   const [swUpdateAvailable, setSwUpdateAvailable] = useState(false);
   const [swBannerDismissed, setSwBannerDismissed] = useState(false);
   const [swUpdating, setSwUpdating] = useState(false);
   const waitingWorkerRef = useRef(null);
   const profilePanelRef = useRef(null);
 
+  // Video intro al primo caricamento e a ogni nuovo aggiornamento
   const INTRO_VIDEO_VERSION = '2026-11-20-v1';
   const introVideoRef = useRef(null);
   const [introMuted, setIntroMuted] = useState(false);
@@ -572,6 +575,7 @@ export default function App() {
     };
   }, []);
 
+  // Registrazione Service Worker + rilevamento immediato di nuove versioni dell'app
   useEffect(() => {
     if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return;
 
@@ -641,6 +645,7 @@ export default function App() {
     }
   }
 
+  // Sezione attiva: bacheca | cerco_aiuto | convenzioni | eventi | gioco | chat
   const [sezioneAttiva, setSezioneAttiva] = useState('bacheca');
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [filtroCercoAiuto, setFiltroCercoAiuto] = useState('Tutti');
@@ -656,10 +661,12 @@ export default function App() {
     }
   });
 
+  // Stato permesso notifiche telefono
   const [notifPermission, setNotifPermission] = useState(() =>
     typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'unsupported'
   );
 
+  // Profilo dipendente
   const [userProfile, setUserProfile] = useState(() => {
     try {
       return (
@@ -695,6 +702,7 @@ export default function App() {
   });
   const [showProfileModal, setShowProfileModal] = useState(false);
 
+  // Chiude il pannello Profilo Collega & Badge quando si clicca fuori dal riquadro
   useEffect(() => {
     if (!showProfileModal) return;
 
@@ -710,6 +718,7 @@ export default function App() {
     };
   }, [showProfileModal]);
 
+  // --- STATO ADMIN & IMPORTAZIONE MASSIVA BADGE ---
   const [isAdminUnlocked, setIsAdminUnlocked] = useState(() => {
     try {
       return sessionStorage.getItem('tracolleghi_admin_unlocked') === '1';
@@ -727,8 +736,8 @@ export default function App() {
   const [adminPinInput, setAdminPinInput] = useState('');
   const [newAdminPinInput, setNewAdminPinInput] = useState('');
   const [showAdminModal, setShowAdminModal] = useState(false);
-  const [adminTab, setAdminTab] = useState('importa');
-  const [adminSavedCheck, setAdminSavedCheck] = useState(false);
+  const [adminTab, setAdminTab] = useState('importa'); // 'importa' | 'elenco' | 'sicurezza'
+  const [adminSavedCheck, setAdminSavedCheck] = useState(false); // Spunta "Salvato ✓"
   const [badgeRegistry, setBadgeRegistry] = useState(() => {
     try {
       const saved = JSON.parse(localStorage.getItem('tracolleghi_badge_registry_v1'));
@@ -756,6 +765,7 @@ export default function App() {
   const [adminSearchBadge, setAdminSearchBadge] = useState('');
   const [adminLoadingImport, setAdminLoadingImport] = useState(false);
 
+  // L'icona Admin è visibile solo all'amministratore (o se già sbloccata in sessione)
   const canSeeAdminOption = useMemo(() => {
     if (isAdminUnlocked) return true;
     const nomeLower = extractBaseName(userProfile.nome).toLowerCase();
@@ -833,8 +843,10 @@ export default function App() {
     }
   }
 
+  // Modale Pubblica Annuncio / Richiesta
   const [showPublishModal, setShowPublishModal] = useState(false);
 
+  // Impostazioni, Gestione Annunci & Modalità di Pagamento
   const [settings, setSettings] = useState(() => {
     try {
       const saved = JSON.parse(localStorage.getItem('tracolleghi_settings_v3')) || {};
@@ -859,6 +871,7 @@ export default function App() {
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [settingsTab, setSettingsTab] = useState('attivi');
 
+  // Preferiti (cuoricino) + notifica quando un preferito viene venduto
   const [preferitiIds, setPreferitiIds] = useState(() => {
     try {
       const saved = JSON.parse(localStorage.getItem('tracolleghi_preferiti_v1'));
@@ -909,6 +922,7 @@ export default function App() {
     }, 2200);
   }
 
+  // STATO EVENTI DI ZONA (tempo libero, sagre, uscite, serate tra colleghi)
   const [eventiZona, setEventiZona] = useState(() => {
     try {
       const saved = JSON.parse(localStorage.getItem('tracolleghi_eventi_zona_v1'));
@@ -932,6 +946,7 @@ export default function App() {
     } catch {}
   }, [eventiZona]);
 
+  // Valutazioni utenti da 1 a 5 stelle
   const [valutazioni, setValutazioni] = useState(() => {
     try {
       const saved = JSON.parse(localStorage.getItem('tracolleghi_valutazioni_v1'));
@@ -951,6 +966,7 @@ export default function App() {
     } catch {}
   }, [valutazioni]);
 
+  // STATO MINI-GIOCO PAUSA CAFFÈ ("Colpo d'Occhio Pausa")
   const [giocoAttivo, setGiocoAttivo] = useState(false);
   const [giocoFinito, setGiocoFinito] = useState(false);
   const [tempoRimasto, setTempoRimasto] = useState(20);
@@ -974,6 +990,7 @@ export default function App() {
     } catch {}
   }, [classificaGioco]);
 
+  // Modifica annuncio
   const [annuncioInModifica, setAnnuncioInModifica] = useState(null);
   const [editForm, setEditForm] = useState({
     titolo: '',
@@ -986,11 +1003,13 @@ export default function App() {
   });
   const [salvataggioModifica, setSalvataggioModifica] = useState(false);
 
+  // Annunci e filtri
   const [annunci, setAnnunci] = useState([]);
   const [filtroCategoria, setFiltroCategoria] = useState('Tutte');
   const [filtroTipo, setFiltroTipo] = useState('Tutti');
   const [ricerca, setRicerca] = useState('');
 
+  // Form pubblicazione annuncio o richiesta Cerco / Aiuto
   const [titolo, setTitolo] = useState('');
   const [descrizione, setDescrizione] = useState('');
   const [prezzo, setPrezzo] = useState('');
@@ -1002,12 +1021,14 @@ export default function App() {
   const [errore, setErrore] = useState('');
   const [avviso, setAvviso] = useState('');
 
+  // Modali eliminazione & chat
   const [annuncioDaEliminare, setAnnuncioDaEliminare] = useState(null);
   const [chatAperta, setChatAperta] = useState(null);
   const [messaggi, setMessaggi] = useState([]);
   const [nuovoMessaggio, setNuovoMessaggio] = useState('');
   const [invioMessaggio, setInvioMessaggio] = useState(false);
 
+  // Tracciamento messaggi già visti (suoneria e push SOLO in ricezione)
   const seenMsgIdsRef = useRef(new Set());
   const initializedMsgsRef = useRef(false);
 
@@ -1056,6 +1077,7 @@ export default function App() {
     return () => clearInterval(timerAnnunci);
   }, []);
 
+  // --- FUNZIONI ADMIN & IMPORTAZIONE MASSIVA BADGE ---
   function handleUnlockAdmin(e) {
     e.preventDefault();
     if (adminPinInput.trim() === adminPin) {
@@ -1303,6 +1325,7 @@ export default function App() {
     });
   }, [eventiZona, filtroEventoCat, ricerca]);
 
+  // Notifica quando uno dei tuoi preferiti passa allo stato VENDUTO
   useEffect(() => {
     if (!annunci.length || !preferitiIds.length) return;
 
@@ -2543,14 +2566,14 @@ export default function App() {
             padding-right: 24px;
           }
         }
+        /* HEADER PIENO CON SAFE AREA IN ALTO PER NON ESSERE COPERTO DAL TELEFONO */
         .tm-top-header {
-          background: rgba(255, 255, 255, 0.96);
-          backdrop-filter: blur(12px);
-          -webkit-backdrop-filter: blur(12px);
+          background: #ffffff;
           position: sticky;
           top: 0;
           z-index: 40;
-          box-shadow: 0 4px 20px rgba(15, 23, 42, 0.05);
+          padding-top: env(safe-area-inset-top);
+          box-shadow: 0 4px 20px rgba(15, 23, 42, 0.06);
         }
         .tm-top-header::after {
           content: '';
@@ -2580,19 +2603,20 @@ export default function App() {
           position: relative;
           width: 44px;
           height: 44px;
-          border-radius: 13px;
-          padding: 2px;
-          background: linear-gradient(135deg, #2563eb 0%, #06b6d4 100%);
-          box-shadow: 0 4px 12px rgba(6, 182, 212, 0.28);
+          border-radius: 12px;
+          padding: 0;
+          overflow: hidden;
+          background: #0f172a;
+          box-shadow: 0 4px 12px rgba(15, 23, 42, 0.18);
           flex-shrink: 0;
         }
         .tm-brand-logo {
           width: 100%;
           height: 100%;
-          border-radius: 11px;
+          border-radius: 0;
           object-fit: cover;
+          transform: scale(1.16);
           display: block;
-          background: #ffffff;
         }
         .tm-brand-text-col {
           display: flex;
@@ -2879,9 +2903,7 @@ export default function App() {
           left: 0;
           right: 0;
           height: 64px;
-          background: rgba(255, 255, 255, 0.96);
-          backdrop-filter: blur(12px);
-          -webkit-backdrop-filter: blur(12px);
+          background: #ffffff;
           border-top: 1.5px solid #e2e8f0;
           display: grid;
           grid-template-columns: repeat(5, 1fr);
@@ -2928,8 +2950,6 @@ export default function App() {
           position: fixed;
           inset: 0;
           background: rgba(15, 23, 42, 0.48);
-          backdrop-filter: blur(6px);
-          -webkit-backdrop-filter: blur(6px);
           z-index: 65;
           display: flex;
           align-items: flex-end;
@@ -4243,7 +4263,7 @@ export default function App() {
                 }}
               >
                 <div style={{ fontSize: '0.86rem', color: '#334155', fontWeight: 600 }}>
-                  Inserisci il PIN Amministratore per sbloccare la gestione badge (predefinito: <strong>{DEFAULT_ADMIN_PIN}</strong>).
+                  Inserisci il PIN Amministratore per sbloccare la gestione badge (predefinito: <strong>2026</strong>).
                 </div>
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <input
