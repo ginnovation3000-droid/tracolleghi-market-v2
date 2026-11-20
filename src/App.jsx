@@ -1,20 +1,37 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
-// Credenziali Supabase del progetto tracolleghi-market (bkdmdiwqdbyimfpzzlcy)
-const SUPABASE_URL = 'https://bkdmdiwqdbyimfpzzlcy.supabase.co';
-const SUPABASE_KEY = 'sb_publishable_YQvIcQl-DbTD48tlMuIdGA_5EmW-fW_';
+// Credenziali Supabase lette da variabili d'ambiente (con fallback sul progetto tracolleghi-market)
+const SUPABASE_URL =
+  import.meta.env.VITE_SUPABASE_URL || 'https://bkdmdiwqdbyimfpzzlcy.supabase.co';
+const SUPABASE_KEY =
+  import.meta.env.VITE_SUPABASE_ANON_KEY ||
+  'sb_publishable_YQvIcQl-DbTD48tlMuIdGA_5EmW-fW_';
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// PIN predefinito per sbloccare l'area Admin (modificabile nelle impostazioni Admin)
-const DEFAULT_ADMIN_PIN = '2026';
+// Configurazione azienda dinamica per istanza
+const COMPANY_NAME = import.meta.env.VITE_COMPANY_NAME || 'TRACOLLEGHI';
+const COMPANY_SUBTITLE = import.meta.env.VITE_COMPANY_SUBTITLE || 'MARKET';
+const COMPANY_LOGO = import.meta.env.VITE_COMPANY_LOGO || '/icona-tracolleghi.jpg';
+
+// PIN predefinito per sbloccare l'area Admin (modificabile nelle impostazioni Admin o via env)
+const DEFAULT_ADMIN_PIN = import.meta.env.VITE_ADMIN_PIN || '2026';
 
 // Identificativi predefiniti amministratore (visibilità voce Admin solo a te)
 const ADMIN_IDENTIFIERS = {
-  names: ['giancarlo gentile'],
-  badges: ['1001'],
-  emails: [],
+  names: (import.meta.env.VITE_ADMIN_NAMES || 'giancarlo gentile')
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean),
+  badges: (import.meta.env.VITE_ADMIN_BADGES || '1001')
+    .split(',')
+    .map((s) => s.trim().toUpperCase())
+    .filter(Boolean),
+  emails: (import.meta.env.VITE_ADMIN_EMAILS || '')
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean),
 };
 
 const SEZIONI_EXTRA = [
@@ -25,16 +42,52 @@ const SEZIONI_EXTRA = [
     desc: 'Sconti e codici partner per i colleghi',
   },
   {
-    id: 'qualita',
-    label: 'Reparti & Qualità',
-    icon: '📊',
-    desc: 'Giorni senza infortuni, KPI e segnalazioni',
+    id: 'eventi',
+    label: 'Eventi di Zona',
+    icon: '🎉',
+    desc: 'Sagre, serate, uscite e dritte tra colleghi',
   },
   {
     id: 'gioco',
     label: 'Pausa Gioco',
     icon: '🎮',
     desc: 'Sfida lampo da 20s e classifica reparti',
+  },
+];
+
+const CATEGORIE_EVENTI_ZONA = [
+  'Tutte',
+  'Oggi / Weekend',
+  'Sagre & Cibo',
+  'Musica & Locali',
+  'Sport & Aria aperta',
+];
+
+const CATEGORIE_EVENTI_FORM = [
+  'Oggi / Weekend',
+  'Sagre & Cibo',
+  'Musica & Locali',
+  'Sport & Aria aperta',
+];
+
+const EVENTI_ZONA_INIZIALI = [
+  {
+    id: 'ev-1',
+    categoria: 'Sagre & Cibo',
+    titolo: 'Pizza & chiacchiere del venerdì sera',
+    dataOra: 'Venerdì • 20:30',
+    luogo: 'Centro / Dintorni',
+    descrizione: 'Serata informale tra colleghi per staccare dalla settimana. Chi vuole aggregarsi scriva in chat!',
+    autore: 'Colleghi',
+  },
+  {
+    id: 'ev-2',
+    categoria: 'Sport & Aria aperta',
+    titolo: 'Giro in bici / passeggiata nel weekend',
+    dataOra: 'Sabato • 09:00',
+    luogo: 'Percorsi locali',
+    descrizione: 'Uscita tranquilla aperta a tutti, ritmo rilassato e caffè finale.',
+    autore: 'Colleghi',
   },
 ];
 
@@ -147,24 +200,6 @@ const REPARTI_AZIENDA = [
   'Altro Reparto',
 ];
 
-const INDICATORI_INIZIALI_REPARTI = {
-  'Produzione / Linea': { giorniSenzaInfortuni: 142, livelloQualita: 98.2, infortuniAnno: 0 },
-  'Ufficio Tecnico / Progettazione': { giorniSenzaInfortuni: 310, livelloQualita: 99.1, infortuniAnno: 0 },
-  'Logistica / Magazzino': { giorniSenzaInfortuni: 196, livelloQualita: 97.8, infortuniAnno: 0 },
-  'Qualità & Collaudo': { giorniSenzaInfortuni: 280, livelloQualita: 99.4, infortuniAnno: 0 },
-  Manutenzione: { giorniSenzaInfortuni: 165, livelloQualita: 98.0, infortuniAnno: 0 },
-  'Amministrazione / Acquisti / HR': { giorniSenzaInfortuni: 420, livelloQualita: 99.5, infortuniAnno: 0 },
-  'Altro Reparto': { giorniSenzaInfortuni: 120, livelloQualita: 98.0, infortuniAnno: 0 },
-};
-
-const TIPI_SEGNALAZIONE_QUALITA = [
-  'Difetto ripetitivo',
-  'Qualità / Miglioramento',
-  'Sicurezza / Quasi-infortunio',
-];
-
-const STATI_SEGNALAZIONE = ['Da verificare', 'In lavorazione', 'Risolto'];
-
 const SUONERIE = [
   { id: 'chime', label: 'Trillo Gentile' },
   { id: 'pop', label: 'Pop Veloce' },
@@ -203,7 +238,6 @@ function normalizeRepartoMatch(rawReparto) {
   return partial || REPARTI_AZIENDA[0];
 }
 
-// Parser intelligente per elenco massivo badge (supporta CSV con ; o , o TAB o righe libere)
 function parseBulkBadgeText(rawText, defaultReparto = REPARTI_AZIENDA[0]) {
   const lines = String(rawText || '')
     .split(/\r?\n/)
@@ -323,8 +357,8 @@ async function sendSystemNotification(title, body, tag = 'tracolleghi-msg') {
 
   const options = {
     body,
-    icon: '/icona-tracolleghi.jpg',
-    badge: '/icona-tracolleghi.jpg',
+    icon: COMPANY_LOGO,
+    badge: COMPANY_LOGO,
     tag,
     renotify: true,
     vibrate: [180, 90, 180],
@@ -461,17 +495,16 @@ function renderStarsInline(media, totale) {
 }
 
 export default function App() {
-  // Stato aggiornamento Service Worker (nuova versione app disponibile)
   const [swUpdateAvailable, setSwUpdateAvailable] = useState(false);
   const [swBannerDismissed, setSwBannerDismissed] = useState(false);
   const [swUpdating, setSwUpdating] = useState(false);
   const waitingWorkerRef = useRef(null);
   const profilePanelRef = useRef(null);
 
-  // Video intro al primo caricamento e a ogni nuovo aggiornamento
   const INTRO_VIDEO_VERSION = '2026-11-20-v1';
   const introVideoRef = useRef(null);
-  const [introMuted, setIntroMuted] = useState(true);
+  const [introMuted, setIntroMuted] = useState(false);
+  const [introAudioBlockedNotice, setIntroAudioBlockedNotice] = useState(false);
   const [showIntroVideo, setShowIntroVideo] = useState(() => {
     try {
       return localStorage.getItem('tracolleghi_intro_seen_version') !== INTRO_VIDEO_VERSION;
@@ -479,6 +512,28 @@ export default function App() {
       return false;
     }
   });
+
+  useEffect(() => {
+    if (!showIntroVideo) return;
+    const vid = introVideoRef.current;
+    if (!vid) return;
+
+    vid.muted = introMuted;
+    const playPromise = vid.play();
+    if (playPromise && typeof playPromise.then === 'function') {
+      playPromise
+        .then(() => {
+          setIntroAudioBlockedNotice(false);
+        })
+        .catch(() => {
+          if (!introMuted) {
+            vid.muted = true;
+            vid.play().catch(() => {});
+            setIntroAudioBlockedNotice(true);
+          }
+        });
+    }
+  }, [showIntroVideo, introMuted]);
 
   function segnaIntroPerAggiornamento() {
     try {
@@ -488,7 +543,7 @@ export default function App() {
 
   function chiudiIntroVideo() {
     setShowIntroVideo(false);
-    setIntroMuted(true);
+    setIntroMuted(false);
     try {
       localStorage.setItem('tracolleghi_intro_seen_version', INTRO_VIDEO_VERSION);
     } catch {}
@@ -497,9 +552,10 @@ export default function App() {
   function toggleIntroAudio() {
     const nextMuted = !introMuted;
     setIntroMuted(nextMuted);
+    setIntroAudioBlockedNotice(false);
     if (introVideoRef.current) {
       introVideoRef.current.muted = nextMuted;
-      if (!nextMuted && introVideoRef.current.paused) {
+      if (!nextMuted) {
         introVideoRef.current.play().catch(() => {});
       }
     }
@@ -516,7 +572,6 @@ export default function App() {
     };
   }, []);
 
-  // Registrazione Service Worker + rilevamento immediato di nuove versioni dell'app
   useEffect(() => {
     if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return;
 
@@ -586,12 +641,11 @@ export default function App() {
     }
   }
 
-  // Sezione attiva: bacheca | cerco_aiuto | convenzioni | qualita | gioco | chat
   const [sezioneAttiva, setSezioneAttiva] = useState('bacheca');
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [filtroCercoAiuto, setFiltroCercoAiuto] = useState('Tutti');
   const [filtroConvenzioneCat, setFiltroConvenzioneCat] = useState('Tutte');
-  const [filtroRepartoQualita, setFiltroRepartoQualita] = useState('Tutti');
+  const [filtroEventoCat, setFiltroEventoCat] = useState('Tutte');
   const [codiceCopiatoId, setCodiceCopiatoId] = useState(null);
   const [schedaAnnuncio, setSchedaAnnuncio] = useState(null);
   const [showInstallBanner, setShowInstallBanner] = useState(() => {
@@ -602,12 +656,10 @@ export default function App() {
     }
   });
 
-  // Stato permesso notifiche telefono
   const [notifPermission, setNotifPermission] = useState(() =>
     typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'unsupported'
   );
 
-  // Profilo dipendente
   const [userProfile, setUserProfile] = useState(() => {
     try {
       return (
@@ -643,7 +695,6 @@ export default function App() {
   });
   const [showProfileModal, setShowProfileModal] = useState(false);
 
-  // Chiude il pannello Profilo Collega & Badge quando si clicca fuori dal riquadro
   useEffect(() => {
     if (!showProfileModal) return;
 
@@ -659,7 +710,6 @@ export default function App() {
     };
   }, [showProfileModal]);
 
-  // --- STATO ADMIN & IMPORTAZIONE MASSIVA BADGE ---
   const [isAdminUnlocked, setIsAdminUnlocked] = useState(() => {
     try {
       return sessionStorage.getItem('tracolleghi_admin_unlocked') === '1';
@@ -677,8 +727,8 @@ export default function App() {
   const [adminPinInput, setAdminPinInput] = useState('');
   const [newAdminPinInput, setNewAdminPinInput] = useState('');
   const [showAdminModal, setShowAdminModal] = useState(false);
-  const [adminTab, setAdminTab] = useState('importa'); // 'importa' | 'elenco' | 'sicurezza'
-  const [adminSavedCheck, setAdminSavedCheck] = useState(false); // Spunta "Salvato ✓"
+  const [adminTab, setAdminTab] = useState('importa');
+  const [adminSavedCheck, setAdminSavedCheck] = useState(false);
   const [badgeRegistry, setBadgeRegistry] = useState(() => {
     try {
       const saved = JSON.parse(localStorage.getItem('tracolleghi_badge_registry_v1'));
@@ -706,7 +756,6 @@ export default function App() {
   const [adminSearchBadge, setAdminSearchBadge] = useState('');
   const [adminLoadingImport, setAdminLoadingImport] = useState(false);
 
-  // L'icona Admin è visibile solo all'amministratore (o se già sbloccata in sessione)
   const canSeeAdminOption = useMemo(() => {
     if (isAdminUnlocked) return true;
     const nomeLower = extractBaseName(userProfile.nome).toLowerCase();
@@ -784,10 +833,8 @@ export default function App() {
     }
   }
 
-  // Modale Pubblica Annuncio / Richiesta
   const [showPublishModal, setShowPublishModal] = useState(false);
 
-  // Impostazioni, Gestione Annunci & Modalità di Pagamento
   const [settings, setSettings] = useState(() => {
     try {
       const saved = JSON.parse(localStorage.getItem('tracolleghi_settings_v3')) || {};
@@ -812,7 +859,6 @@ export default function App() {
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [settingsTab, setSettingsTab] = useState('attivi');
 
-  // Preferiti (cuoricino) + notifica quando un preferito viene venduto
   const [preferitiIds, setPreferitiIds] = useState(() => {
     try {
       const saved = JSON.parse(localStorage.getItem('tracolleghi_preferiti_v1'));
@@ -863,53 +909,29 @@ export default function App() {
     }, 2200);
   }
 
-  // STATO REPARTI, SICUREZZA, INFORTUNI & QUALITÀ
-  const [indicatoriReparti, setIndicatoriReparti] = useState(() => {
+  const [eventiZona, setEventiZona] = useState(() => {
     try {
-      const saved = JSON.parse(localStorage.getItem('tracolleghi_reparti_kpi_v1'));
-      return { ...INDICATORI_INIZIALI_REPARTI, ...(saved || {}) };
+      const saved = JSON.parse(localStorage.getItem('tracolleghi_eventi_zona_v1'));
+      return Array.isArray(saved) && saved.length > 0 ? saved : EVENTI_ZONA_INIZIALI;
     } catch {
-      return INDICATORI_INIZIALI_REPARTI;
+      return EVENTI_ZONA_INIZIALI;
     }
   });
-
-  const [segnalazioniQualita, setSegnalazioniQualita] = useState(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem('tracolleghi_qualita_logs_v1'));
-      return Array.isArray(saved) ? saved : [];
-    } catch {
-      return [];
-    }
-  });
-
-  const [showQualitaForm, setShowQualitaForm] = useState(false);
-  const [qualitaForm, setQualitaForm] = useState({
-    reparto: userProfile.reparto || REPARTI_AZIENDA[0],
-    tipo: 'Difetto ripetitivo',
+  const [showEventoForm, setShowEventoForm] = useState(false);
+  const [eventoForm, setEventoForm] = useState({
+    categoria: 'Oggi / Weekend',
     titolo: '',
+    dataOra: '',
+    luogo: '',
     descrizione: '',
-    foto: '',
-  });
-  const [repartoInModificaKpi, setRepartoInModificaKpi] = useState(null);
-  const [kpiEditForm, setKpiEditForm] = useState({
-    giorniSenzaInfortuni: 0,
-    livelloQualita: 98.5,
-    infortuniAnno: 0,
   });
 
   useEffect(() => {
     try {
-      localStorage.setItem('tracolleghi_reparti_kpi_v1', JSON.stringify(indicatoriReparti));
+      localStorage.setItem('tracolleghi_eventi_zona_v1', JSON.stringify(eventiZona));
     } catch {}
-  }, [indicatoriReparti]);
+  }, [eventiZona]);
 
-  useEffect(() => {
-    try {
-      localStorage.setItem('tracolleghi_qualita_logs_v1', JSON.stringify(segnalazioniQualita));
-    } catch {}
-  }, [segnalazioniQualita]);
-
-  // Valutazioni utenti da 1 a 5 stelle
   const [valutazioni, setValutazioni] = useState(() => {
     try {
       const saved = JSON.parse(localStorage.getItem('tracolleghi_valutazioni_v1'));
@@ -929,7 +951,6 @@ export default function App() {
     } catch {}
   }, [valutazioni]);
 
-  // STATO MINI-GIOCO PAUSA CAFFÈ ("Colpo d'Occhio Pausa")
   const [giocoAttivo, setGiocoAttivo] = useState(false);
   const [giocoFinito, setGiocoFinito] = useState(false);
   const [tempoRimasto, setTempoRimasto] = useState(20);
@@ -953,7 +974,6 @@ export default function App() {
     } catch {}
   }, [classificaGioco]);
 
-  // Modifica annuncio
   const [annuncioInModifica, setAnnuncioInModifica] = useState(null);
   const [editForm, setEditForm] = useState({
     titolo: '',
@@ -966,13 +986,11 @@ export default function App() {
   });
   const [salvataggioModifica, setSalvataggioModifica] = useState(false);
 
-  // Annunci e filtri
   const [annunci, setAnnunci] = useState([]);
   const [filtroCategoria, setFiltroCategoria] = useState('Tutte');
   const [filtroTipo, setFiltroTipo] = useState('Tutti');
   const [ricerca, setRicerca] = useState('');
 
-  // Form pubblicazione annuncio o richiesta Cerco / Aiuto
   const [titolo, setTitolo] = useState('');
   const [descrizione, setDescrizione] = useState('');
   const [prezzo, setPrezzo] = useState('');
@@ -984,14 +1002,12 @@ export default function App() {
   const [errore, setErrore] = useState('');
   const [avviso, setAvviso] = useState('');
 
-  // Modali eliminazione & chat
   const [annuncioDaEliminare, setAnnuncioDaEliminare] = useState(null);
   const [chatAperta, setChatAperta] = useState(null);
   const [messaggi, setMessaggi] = useState([]);
   const [nuovoMessaggio, setNuovoMessaggio] = useState('');
   const [invioMessaggio, setInvioMessaggio] = useState(false);
 
-  // Tracciamento messaggi già visti (suoneria e push SOLO in ricezione)
   const seenMsgIdsRef = useRef(new Set());
   const initializedMsgsRef = useRef(false);
 
@@ -1022,7 +1038,6 @@ export default function App() {
         setAnnuncioDaEliminare(null);
         setChatAperta(null);
         setUtenteDaValutare(null);
-        setRepartoInModificaKpi(null);
         setSchedaAnnuncio(null);
       }
     };
@@ -1034,7 +1049,6 @@ export default function App() {
     fetchAnnunci();
     fetchValutazioni();
     fetchClassificaGioco();
-    fetchSegnalazioniQualita();
     fetchBadgeRegistry();
     const timerAnnunci = setInterval(() => {
       fetchAnnunci();
@@ -1042,7 +1056,6 @@ export default function App() {
     return () => clearInterval(timerAnnunci);
   }, []);
 
-  // --- FUNZIONI ADMIN & IMPORTAZIONE MASSIVA BADGE ---
   function handleUnlockAdmin(e) {
     e.preventDefault();
     if (adminPinInput.trim() === adminPin) {
@@ -1243,188 +1256,53 @@ export default function App() {
     });
   }
 
-  async function fetchSegnalazioniQualita() {
-    try {
-      const { data, error } = await supabase
-        .from('segnalazioni_qualita')
-        .select('*')
-        .order('created_at', { ascending: false });
-      if (!error && Array.isArray(data)) {
-        setSegnalazioniQualita(data);
-      }
-    } catch {
-      // Fallback locale
-    }
-  }
-
-  async function handleFotoQualitaChange(e) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    try {
-      const comp = await compressImageFile(file, 760, 0.7);
-      setQualitaForm((prev) => ({ ...prev, foto: comp }));
-    } catch {
-      setErrore('Impossibile caricare la foto della segnalazione.');
-    }
-  }
-
-  async function handleSalvaSegnalazioneQualita(e) {
+  function handleSalvaEventoZona(e) {
     e.preventDefault();
-    if (!qualitaForm.titolo.trim() || !qualitaForm.descrizione.trim()) {
-      setErrore('Inserisci titolo e descrizione della segnalazione.');
+    if (!eventoForm.titolo.trim() || !eventoForm.descrizione.trim()) {
+      setErrore("Inserisci titolo e dettagli dell'evento o della proposta.");
       return;
     }
 
     const autoreNome = extractBaseName(userProfile.nome) || 'Collega';
-    const record = {
-      reparto: qualitaForm.reparto || REPARTI_AZIENDA[0],
-      tipo: qualitaForm.tipo || 'Difetto ripetitivo',
-      titolo: qualitaForm.titolo.trim(),
-      descrizione: qualitaForm.descrizione.trim(),
-      stato: 'Da verificare',
+    const nuovoEvento = {
+      id: `ev-${Date.now()}`,
+      categoria: eventoForm.categoria || 'Oggi / Weekend',
+      titolo: eventoForm.titolo.trim(),
+      dataOra: eventoForm.dataOra.trim() || 'Prossimamente',
+      luogo: eventoForm.luogo.trim() || 'Zona locale',
+      descrizione: eventoForm.descrizione.trim(),
       autore: autoreNome,
-      immagine: qualitaForm.foto || null,
-      created_at: new Date().toISOString(),
     };
 
-    setSegnalazioniQualita((prev) => [{ ...record, id: Date.now() }, ...prev]);
-    setQualitaForm({
-      reparto: userProfile.reparto || REPARTI_AZIENDA[0],
-      tipo: 'Difetto ripetitivo',
+    setEventiZona((prev) => [nuovoEvento, ...prev]);
+    setEventoForm({
+      categoria: 'Oggi / Weekend',
       titolo: '',
+      dataOra: '',
+      luogo: '',
       descrizione: '',
-      foto: '',
     });
-    setShowQualitaForm(false);
-    setAvviso(`Segnalazione "${record.tipo}" registrata per ${record.reparto}.`);
+    setShowEventoForm(false);
+    setErrore('');
+    setAvviso(`Evento "${nuovoEvento.titolo}" aggiunto in Eventi di Zona!`);
     setTimeout(() => setAvviso(''), 3000);
-
-    try {
-      const { error } = await supabase.from('segnalazioni_qualita').insert([
-        {
-          reparto: record.reparto,
-          tipo: record.tipo,
-          titolo: record.titolo,
-          descrizione: record.descrizione,
-          stato: record.stato,
-          autore: record.autore,
-          immagine: record.immagine,
-        },
-      ]);
-      if (!error) {
-        await fetchSegnalazioniQualita();
-      }
-    } catch {
-      // Rimane salvata in locale
-    }
   }
 
-  async function cambiaStatoSegnalazione(item, nuovoStato) {
-    setSegnalazioniQualita((prev) =>
-      prev.map((s) => (s.id === item.id ? { ...s, stato: nuovoStato } : s))
-    );
-    try {
-      await supabase.from('segnalazioni_qualita').update({ stato: nuovoStato }).eq('id', item.id);
-    } catch {
-      // Silenzioso
-    }
-  }
-
-  function incrementaGiornoSicurezzaReparto(repNome) {
-    setIndicatoriReparti((prev) => {
-      const att = prev[repNome] || INDICATORI_INIZIALI_REPARTI[repNome] || {
-        giorniSenzaInfortuni: 0,
-        livelloQualita: 98.0,
-        infortuniAnno: 0,
-      };
-      return {
-        ...prev,
-        [repNome]: {
-          ...att,
-          giorniSenzaInfortuni: (Number(att.giorniSenzaInfortuni) || 0) + 1,
-        },
-      };
-    });
-  }
-
-  function apriModificaKpiReparto(repNome) {
-    const att = indicatoriReparti[repNome] || INDICATORI_INIZIALI_REPARTI[repNome] || {
-      giorniSenzaInfortuni: 0,
-      livelloQualita: 98.0,
-      infortuniAnno: 0,
-    };
-    setRepartoInModificaKpi(repNome);
-    setKpiEditForm({
-      giorniSenzaInfortuni: Number(att.giorniSenzaInfortuni) || 0,
-      livelloQualita: Number(att.livelloQualita) || 98.0,
-      infortuniAnno: Number(att.infortuniAnno) || 0,
-    });
-  }
-
-  function handleSalvaKpiReparto(e) {
-    e.preventDefault();
-    if (!repartoInModificaKpi) return;
-    setIndicatoriReparti((prev) => ({
-      ...prev,
-      [repartoInModificaKpi]: {
-        giorniSenzaInfortuni: Math.max(0, Number(kpiEditForm.giorniSenzaInfortuni) || 0),
-        livelloQualita: Math.min(100, Math.max(0, Number(kpiEditForm.livelloQualita) || 0)),
-        infortuniAnno: Math.max(0, Number(kpiEditForm.infortuniAnno) || 0),
-      },
-    }));
-    setRepartoInModificaKpi(null);
-    setAvviso('Indicatori di reparto aggiornati.');
-    setTimeout(() => setAvviso(''), 2500);
-  }
-
-  const riepilogoAziendaleQualita = useMemo(() => {
-    const repList = REPARTI_AZIENDA.map((rep) => {
-      const kpi = indicatoriReparti[rep] || INDICATORI_INIZIALI_REPARTI[rep] || {
-        giorniSenzaInfortuni: 0,
-        livelloQualita: 98.0,
-        infortuniAnno: 0,
-      };
-      const difettiAperti = segnalazioniQualita.filter(
-        (s) => s.reparto === rep && s.tipo === 'Difetto ripetitivo' && s.stato !== 'Risolto'
-      ).length;
-      const segnalazioniAperte = segnalazioniQualita.filter(
-        (s) => s.reparto === rep && s.stato !== 'Risolto'
-      ).length;
-      return {
-        reparto: rep,
-        ...kpi,
-        difettiAperti,
-        segnalazioniAperte,
-      };
-    });
-
-    const qualitaMedia =
-      repList.length > 0
-        ? repList.reduce((acc, r) => acc + (Number(r.livelloQualita) || 0), 0) / repList.length
-        : 0;
-    const infortuniTotali = repList.reduce((acc, r) => acc + (Number(r.infortuniAnno) || 0), 0);
-    const difettiRipetitiviAperti = segnalazioniQualita.filter(
-      (s) => s.tipo === 'Difetto ripetitivo' && s.stato !== 'Risolto'
-    ).length;
-
-    return { repList, qualitaMedia, infortuniTotali, difettiRipetitiviAperti };
-  }, [indicatoriReparti, segnalazioniQualita]);
-
-  const segnalazioniQualitaFiltrate = useMemo(() => {
-    return segnalazioniQualita.filter((s) => {
-      const okRep = filtroRepartoQualita === 'Tutti' || s.reparto === filtroRepartoQualita;
+  const eventiZonaFiltrati = useMemo(() => {
+    return eventiZona.filter((ev) => {
+      const okCat = filtroEventoCat === 'Tutte' || ev.categoria === filtroEventoCat;
       const q = ricerca.trim().toLowerCase();
       const okQ =
         !q ||
-        (s.titolo || '').toLowerCase().includes(q) ||
-        (s.descrizione || '').toLowerCase().includes(q) ||
-        (s.reparto || '').toLowerCase().includes(q) ||
-        (s.tipo || '').toLowerCase().includes(q);
-      return okRep && okQ;
+        (ev.titolo || '').toLowerCase().includes(q) ||
+        (ev.descrizione || '').toLowerCase().includes(q) ||
+        (ev.luogo || '').toLowerCase().includes(q) ||
+        (ev.categoria || '').toLowerCase().includes(q) ||
+        (ev.autore || '').toLowerCase().includes(q);
+      return okCat && okQ;
     });
-  }, [segnalazioniQualita, filtroRepartoQualita, ricerca]);
+  }, [eventiZona, filtroEventoCat, ricerca]);
 
-  // Notifica quando uno dei tuoi preferiti passa allo stato VENDUTO
   useEffect(() => {
     if (!annunci.length || !preferitiIds.length) return;
 
@@ -1454,7 +1332,7 @@ export default function App() {
     if (settings.notificheAttive) {
       playNotificationSound(settings.suoneria);
       sendSystemNotification(
-        'Preferito venduto • TRACOLLEGHI Market',
+        `Preferito venduto • ${COMPANY_NAME} ${COMPANY_SUBTITLE}`,
         nuoviVenduti.length === 1
           ? `"${primo.titolo}" è ora VENDUTO.`
           : `${nuoviVenduti.length} tuoi preferiti sono stati venduti.`,
@@ -1769,7 +1647,7 @@ export default function App() {
         setSettings((prev) => ({ ...prev, notificheAttive: true }));
         if (mostraFeedback) {
           await sendSystemNotification(
-            'TRACOLLEGHI Market',
+            `${COMPANY_NAME} ${COMPANY_SUBTITLE}`,
             'Notifiche attive! Riceverai qui i messaggi dei tuoi colleghi.',
             'tracolleghi-test'
           );
@@ -1777,7 +1655,7 @@ export default function App() {
           setTimeout(() => setAvviso(''), 3000);
         }
       } else if (mostraFeedback && res === 'denied') {
-        setErrore('Notifiche bloccate dal browser: abilitale nelle impostazioni del telefono per TRACOLLEGHI Market.');
+        setErrore('Notifiche bloccate dal browser: abilitale nelle impostazioni del telefono.');
       }
     } catch {
       // Silenzioso
@@ -1946,12 +1824,8 @@ export default function App() {
   function apriModalePubblica(modalitaIniziale = sezioneAttiva) {
     setErrore('');
     setShowMoreMenu(false);
-    if (modalitaIniziale === 'qualita') {
-      setQualitaForm((prev) => ({
-        ...prev,
-        reparto: userProfile.reparto || REPARTI_AZIENDA[0],
-      }));
-      setShowQualitaForm(true);
+    if (modalitaIniziale === 'eventi') {
+      setShowEventoForm(true);
       return;
     }
     if (!userProfile.registrato || !userProfile.nome.trim()) {
@@ -2567,7 +2441,6 @@ export default function App() {
             ref={introVideoRef}
             src="/intro-tracolleghi.mp4"
             autoPlay
-            muted={introMuted}
             playsInline
             onEnded={chiudiIntroVideo}
             onError={chiudiIntroVideo}
@@ -2594,11 +2467,11 @@ export default function App() {
             <button
               type="button"
               onClick={toggleIntroAudio}
-              aria-label={introMuted ? 'Attiva audio video' : 'Disattiva audio video'}
+              aria-label={introMuted ? 'Attiva audio video' : 'Silenzia audio video'}
               style={{
-                background: introMuted ? 'rgba(15, 23, 42, 0.75)' : 'rgba(6, 182, 212, 0.28)',
+                background: introMuted ? 'rgba(239, 68, 68, 0.28)' : 'rgba(6, 182, 212, 0.28)',
                 color: '#ffffff',
-                border: introMuted ? '1px solid rgba(255, 255, 255, 0.25)' : '1px solid #38bdf8',
+                border: introMuted ? '1px solid #fca5a5' : '1px solid #38bdf8',
                 borderRadius: '999px',
                 padding: '7px 12px',
                 fontFamily: fontBody,
@@ -2607,8 +2480,23 @@ export default function App() {
                 cursor: 'pointer',
               }}
             >
-              {introMuted ? '🔇 Audio' : '🔊 Audio'}
+              {introMuted ? '🔇 Riattiva audio' : '🔊 Silenzia'}
             </button>
+            {introAudioBlockedNotice && (
+              <span
+                style={{
+                  background: 'rgba(15, 23, 42, 0.85)',
+                  color: '#fde68a',
+                  border: '1px solid rgba(253, 230, 138, 0.45)',
+                  borderRadius: '999px',
+                  padding: '6px 11px',
+                  fontSize: '0.72rem',
+                  fontWeight: 700,
+                }}
+              >
+                Tocca "Riattiva audio" se il browser blocca il suono
+              </span>
+            )}
             <button
               type="button"
               onClick={chiudiIntroVideo}
@@ -2655,7 +2543,6 @@ export default function App() {
             padding-right: 24px;
           }
         }
-        /* HEADER LUMINOSO AD ALTO CONTRASTO CON LINEA PULSAR */
         .tm-top-header {
           background: rgba(255, 255, 255, 0.96);
           backdrop-filter: blur(12px);
@@ -2825,7 +2712,6 @@ export default function App() {
           padding-top: 14px;
           padding-bottom: 92px;
         }
-        /* CARD AD ALTO CONTRASTO CON ACCENTI BLU/CIANO */
         .tm-grid-v {
           display: grid;
           grid-template-columns: repeat(2, 1fr);
@@ -2971,11 +2857,6 @@ export default function App() {
           box-shadow: 0 3px 10px rgba(16, 185, 129, 0.35);
           animation: tm-pop-check 0.25s ease-out;
         }
-        .tm-kpi-summary {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(165px, 1fr));
-          gap: 12px;
-        }
         .tm-rep-grid {
           display: grid;
           grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
@@ -2992,7 +2873,6 @@ export default function App() {
             grid-template-columns: 1fr;
           }
         }
-        /* BARRA DI NAVIGAZIONE INFERIORE FISSA */
         .tm-bottom-nav {
           position: fixed;
           bottom: 0;
@@ -3044,7 +2924,6 @@ export default function App() {
           cursor: pointer;
           box-shadow: 0 6px 18px rgba(6, 182, 212, 0.4);
         }
-        /* MENU RAPIDO A COMPARSA (ALTRO) */
         .tm-more-backdrop {
           position: fixed;
           inset: 0;
@@ -3112,7 +2991,6 @@ export default function App() {
         }
       `}</style>
 
-      {/* AVVISO DISCRETO NUOVA VERSIONE DISPONIBILE (SERVICE WORKER) */}
       {swUpdateAvailable && !swBannerDismissed && (
         <div
           role="status"
@@ -3136,7 +3014,7 @@ export default function App() {
             }}
           >
             <span>
-              <strong>Nuova versione disponibile</strong> • Aggiorna TRACOLLEGHI MARKET.
+              <strong>Nuova versione disponibile</strong> • Aggiorna {COMPANY_NAME} {COMPANY_SUBTITLE}.
             </span>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <button
@@ -3176,7 +3054,6 @@ export default function App() {
         </div>
       )}
 
-      {/* HEADER LUMINOSO AD ALTO CONTRASTO CON PANNELLO PROFILO BADGE INTEGRATO NELL'ICONA A SINISTRA */}
       <header className="tm-top-header">
         <div className="tm-container">
           <div className="tm-header-top-row">
@@ -3198,8 +3075,8 @@ export default function App() {
               >
                 <div className="tm-brand-logo-wrap">
                   <img
-                    src="/icona-tracolleghi.jpg"
-                    alt="TRACOLLEGHI MARKET"
+                    src={COMPANY_LOGO}
+                    alt={`${COMPANY_NAME} ${COMPANY_SUBTITLE}`}
                     className="tm-brand-logo"
                     onError={(e) => {
                       e.currentTarget.style.display = 'none';
@@ -3207,11 +3084,11 @@ export default function App() {
                   />
                 </div>
                 <div className="tm-brand-text-col">
-                  <div className="tm-brand-name">TRACOLLEGHI</div>
+                  <div className="tm-brand-name">{COMPANY_NAME}</div>
                   <div className="tm-brand-market-row">
                     <span className="tm-brand-sub">
                       <span className="tm-live-dot" />
-                      MARKET
+                      {COMPANY_SUBTITLE}
                     </span>
                   </div>
                 </div>
@@ -3334,6 +3211,43 @@ export default function App() {
                 </div>
               )}
             </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                setShowMoreMenu(false);
+                setShowProfileModal(false);
+                setSezioneAttiva('bacheca');
+                setFiltroCategoria('Tutte');
+                setFiltroTipo('Tutti');
+                setSoloPreferiti(false);
+                setRicerca('');
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+              title="Torna alla Home"
+              aria-label="Torna alla Home"
+              style={{
+                height: '36px',
+                borderRadius: '11px',
+                border: sezioneAttiva === 'bacheca' ? '1.5px solid #2563eb' : '1.5px solid #cbd5e1',
+                background: sezioneAttiva === 'bacheca' ? '#eff6ff' : '#ffffff',
+                color: '#0f172a',
+                fontFamily: fontBody,
+                fontSize: '0.78rem',
+                fontWeight: 800,
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '5px',
+                padding: '0 12px',
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+                boxShadow: '0 2px 6px rgba(15, 23, 42, 0.04)',
+              }}
+            >
+              <span>🏠</span>
+              <span>Home</span>
+            </button>
           </div>
 
           <div className="tm-search-row">
@@ -3345,8 +3259,8 @@ export default function App() {
                   ? 'Cerca richieste o passaggi...'
                   : sezioneAttiva === 'convenzioni'
                   ? 'Cerca convenzione o zona...'
-                  : sezioneAttiva === 'qualita'
-                  ? 'Cerca difetto o reparto...'
+                  : sezioneAttiva === 'eventi'
+                  ? 'Cerca sagre, serate o uscite...'
                   : 'Cerca tra i colleghi...'
               }
               value={ricerca}
@@ -3354,7 +3268,6 @@ export default function App() {
             />
           </div>
 
-          {/* Pillole filtro per Bacheca */}
           {sezioneAttiva === 'bacheca' && (
             <div className="tm-filter-strip">
               {MACRO_CATEGORIE.map((cat) => (
@@ -3387,7 +3300,6 @@ export default function App() {
             </div>
           )}
 
-          {/* Pillole filtro per Cerco / Aiuto */}
           {sezioneAttiva === 'cerco_aiuto' && (
             <div className="tm-filter-strip">
               {SOTTOCATEGORIE_CERCO_AIUTO.map((sub) => (
@@ -3403,7 +3315,6 @@ export default function App() {
             </div>
           )}
 
-          {/* Pillole filtro per Convenzioni */}
           {sezioneAttiva === 'convenzioni' && (
             <div className="tm-filter-strip">
               {['Tutte', 'Food & Pausa', 'Auto & Moto', 'Sport & Benessere', 'Negozi & Servizi'].map((cat) => (
@@ -3419,24 +3330,23 @@ export default function App() {
             </div>
           )}
 
-          {/* Pillole filtro per Reparti & Qualità */}
-          {sezioneAttiva === 'qualita' && (
+          {sezioneAttiva === 'eventi' && (
             <div className="tm-filter-strip">
               <button
                 type="button"
                 className="tm-pill is-active"
-                onClick={() => setShowQualitaForm((prev) => !prev)}
+                onClick={() => setShowEventoForm((prev) => !prev)}
               >
-                {showQualitaForm ? '✕ Chiudi modulo' : '+ Segnala difetto'}
+                {showEventoForm ? '✕ Chiudi' : '+ Proponi evento'}
               </button>
-              {['Tutti', ...REPARTI_AZIENDA].map((rep) => (
+              {CATEGORIE_EVENTI_ZONA.map((cat) => (
                 <button
-                  key={rep}
+                  key={cat}
                   type="button"
-                  className={`tm-pill ${filtroRepartoQualita === rep ? 'is-active' : ''}`}
-                  onClick={() => setFiltroRepartoQualita(rep)}
+                  className={`tm-pill ${filtroEventoCat === cat ? 'is-active' : ''}`}
+                  onClick={() => setFiltroEventoCat(cat)}
                 >
-                  {rep}
+                  {cat}
                 </button>
               ))}
             </div>
@@ -3444,7 +3354,6 @@ export default function App() {
         </div>
       </header>
 
-      {/* CONTENUTO PRINCIPALE */}
       <main className="tm-container tm-board-wrapper">
         {showInstallBanner && (
           <div
@@ -3464,7 +3373,7 @@ export default function App() {
             }}
           >
             <span>
-              <strong>📲 Schermata Home:</strong> aggiungi <strong>TRACOLLEGHI MARKET</strong> all’app per aprirla in un tocco.
+              <strong>📲 Schermata Home:</strong> aggiungi <strong>{COMPANY_NAME} {COMPANY_SUBTITLE}</strong> all’app per aprirla in un tocco.
             </span>
             <button
               type="button"
@@ -3522,7 +3431,6 @@ export default function App() {
           </div>
         )}
 
-        {/* SEZIONE BACHECA (GRIGLIA 4:5) */}
         {sezioneAttiva === 'bacheca' && (
           <section className="tm-grid-v">
             {annunciFiltrati.length === 0 ? (
@@ -3547,7 +3455,6 @@ export default function App() {
           </section>
         )}
 
-        {/* SEZIONE CERCO / AIUTO */}
         {sezioneAttiva === 'cerco_aiuto' && (
           <section className="tm-grid-v">
             {postCercoAiutoFiltrati.length === 0 ? (
@@ -3570,7 +3477,6 @@ export default function App() {
           </section>
         )}
 
-        {/* SEZIONE CONVENZIONI */}
         {sezioneAttiva === 'convenzioni' && (
           <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '14px' }}>
             {convenzioniFiltrate.map((conv) => {
@@ -3653,33 +3559,11 @@ export default function App() {
           </section>
         )}
 
-        {/* SEZIONE REPARTI & QUALITÀ */}
-        {sezioneAttiva === 'qualita' && (
+        {sezioneAttiva === 'eventi' && (
           <section style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <div className="tm-kpi-summary">
-              <div style={{ background: '#fff', borderRadius: '14px', padding: '14px', border: '1.5px solid #e2e8f0' }}>
-                <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748b' }}>QUALITÀ MEDIA</div>
-                <div style={{ fontFamily: fontHeading, fontSize: '1.4rem', fontWeight: 800, color: '#047857', marginTop: '4px' }}>
-                  {riepilogoAziendaleQualita.qualitaMedia.toFixed(1)}%
-                </div>
-              </div>
-              <div style={{ background: '#fff', borderRadius: '14px', padding: '14px', border: '1.5px solid #e2e8f0' }}>
-                <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748b' }}>INFORTUNI TOTALI</div>
-                <div style={{ fontFamily: fontHeading, fontSize: '1.4rem', fontWeight: 800, color: '#1d4ed8', marginTop: '4px' }}>
-                  {riepilogoAziendaleQualita.infortuniTotali}
-                </div>
-              </div>
-              <div style={{ background: '#fff', borderRadius: '14px', padding: '14px', border: '1.5px solid #e2e8f0' }}>
-                <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748b' }}>DIFETTI APERTI</div>
-                <div style={{ fontFamily: fontHeading, fontSize: '1.4rem', fontWeight: 800, color: '#d97706', marginTop: '4px' }}>
-                  {riepilogoAziendaleQualita.difettiRipetitiviAperti}
-                </div>
-              </div>
-            </div>
-
-            {showQualitaForm && (
+            {showEventoForm && (
               <form
-                onSubmit={handleSalvaSegnalazioneQualita}
+                onSubmit={handleSalvaEventoZona}
                 style={{
                   background: '#ffffff',
                   borderRadius: '16px',
@@ -3692,65 +3576,64 @@ export default function App() {
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <h3 style={{ margin: 0, fontFamily: fontHeading, fontSize: '1rem', color: '#0f172a' }}>
-                    Nuova segnalazione reparto
+                    Proponi un evento o una dritta di zona
                   </h3>
                   <button
                     type="button"
-                    onClick={() => setShowQualitaForm(false)}
+                    onClick={() => setShowEventoForm(false)}
                     style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}
                   >
                     ✕
                   </button>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '8px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '8px' }}>
                   <select
-                    value={qualitaForm.reparto}
-                    onChange={(e) => setQualitaForm((prev) => ({ ...prev, reparto: e.target.value }))}
+                    value={eventoForm.categoria}
+                    onChange={(e) => setEventoForm((prev) => ({ ...prev, categoria: e.target.value }))}
                     style={{ padding: '9px 11px', borderRadius: '10px', border: '1px solid #cbd5e1' }}
                   >
-                    {REPARTI_AZIENDA.map((rep) => (
-                      <option key={rep} value={rep}>
-                        {rep}
+                    {CATEGORIE_EVENTI_FORM.map((cat) => (
+                      <option key={cat} value={cat}>
+                        {cat}
                       </option>
                     ))}
                   </select>
-                  <select
-                    value={qualitaForm.tipo}
-                    onChange={(e) => setQualitaForm((prev) => ({ ...prev, tipo: e.target.value }))}
+                  <input
+                    type="text"
+                    placeholder="Quando (es. Sabato ore 20:00)"
+                    value={eventoForm.dataOra}
+                    onChange={(e) => setEventoForm((prev) => ({ ...prev, dataOra: e.target.value }))}
                     style={{ padding: '9px 11px', borderRadius: '10px', border: '1px solid #cbd5e1' }}
-                  >
-                    {TIPI_SEGNALAZIONE_QUALITA.map((t) => (
-                      <option key={t} value={t}>
-                        {t}
-                      </option>
-                    ))}
-                  </select>
+                  />
+                  <input
+                    type="text"
+                    placeholder="Zona / Luogo"
+                    value={eventoForm.luogo}
+                    onChange={(e) => setEventoForm((prev) => ({ ...prev, luogo: e.target.value }))}
+                    style={{ padding: '9px 11px', borderRadius: '10px', border: '1px solid #cbd5e1' }}
+                  />
                 </div>
 
                 <input
                   type="text"
-                  placeholder="Titolo segnalazione..."
-                  value={qualitaForm.titolo}
-                  onChange={(e) => setQualitaForm((prev) => ({ ...prev, titolo: e.target.value }))}
+                  placeholder="Titolo (es. Sagra del paese, Concerto, Pizzata...)"
+                  value={eventoForm.titolo}
+                  onChange={(e) => setEventoForm((prev) => ({ ...prev, titolo: e.target.value }))}
                   required
                   style={{ padding: '9px 11px', borderRadius: '10px', border: '1px solid #cbd5e1' }}
                 />
 
                 <textarea
                   rows={2}
-                  placeholder="Dettagli del difetto o miglioramento..."
-                  value={qualitaForm.descrizione}
-                  onChange={(e) => setQualitaForm((prev) => ({ ...prev, descrizione: e.target.value }))}
+                  placeholder="Dettagli, ritrovo o info utili per i colleghi..."
+                  value={eventoForm.descrizione}
+                  onChange={(e) => setEventoForm((prev) => ({ ...prev, descrizione: e.target.value }))}
                   required
                   style={{ padding: '9px 11px', borderRadius: '10px', border: '1px solid #cbd5e1' }}
                 />
 
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
-                  <label style={{ fontSize: '0.8rem', fontWeight: 700, color: '#2563eb', cursor: 'pointer' }}>
-                    📷 {qualitaForm.foto ? 'Foto allegata ✓' : 'Allega foto'}
-                    <input type="file" accept="image/*" onChange={handleFotoQualitaChange} style={{ display: 'none' }} />
-                  </label>
+                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                   <button
                     type="submit"
                     style={{
@@ -3764,135 +3647,107 @@ export default function App() {
                       cursor: 'pointer',
                     }}
                   >
-                    Invia
+                    Pubblica evento
                   </button>
                 </div>
               </form>
             )}
 
             <div className="tm-rep-grid">
-              {riepilogoAziendaleQualita.repList
-                .filter((r) => filtroRepartoQualita === 'Tutti' || r.reparto === filtroRepartoQualita)
-                .map((rep) => (
-                  <article
-                    key={rep.reparto}
-                    style={{
-                      background: '#ffffff',
-                      borderRadius: '14px',
-                      padding: '14px',
-                      border: '1.5px solid #e2e8f0',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '10px',
-                    }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
-                      <h3 style={{ margin: 0, fontFamily: fontHeading, fontSize: '0.94rem', color: '#0f172a' }}>
-                        {rep.reparto}
-                      </h3>
-                      <button
-                        type="button"
-                        onClick={() => apriModificaKpiReparto(rep.reparto)}
-                        style={{
-                          background: '#f1f5f9',
-                          border: '1px solid #cbd5e1',
-                          borderRadius: '8px',
-                          padding: '3px 8px',
-                          fontSize: '0.7rem',
-                          fontWeight: 700,
-                          cursor: 'pointer',
-                        }}
-                      >
-                        KPI
-                      </button>
-                    </div>
-
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '0.8rem' }}>
-                      <div style={{ background: '#f8fafc', padding: '8px', borderRadius: '10px' }}>
-                        <div style={{ color: '#64748b', fontSize: '0.68rem', fontWeight: 700 }}>SENZA INFORTUNI</div>
-                        <div style={{ fontWeight: 800, color: '#0f172a' }}>{rep.giorniSenzaInfortuni} gg</div>
-                      </div>
-                      <div style={{ background: '#f8fafc', padding: '8px', borderRadius: '10px' }}>
-                        <div style={{ color: '#64748b', fontSize: '0.68rem', fontWeight: 700 }}>QUALITÀ</div>
-                        <div style={{ fontWeight: 800, color: '#047857' }}>{Number(rep.livelloQualita).toFixed(1)}%</div>
-                      </div>
-                    </div>
-
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.76rem', color: '#475569' }}>
-                      <span>Difetti aperti: <strong>{rep.difettiAperti}</strong></span>
-                      <button
-                        type="button"
-                        onClick={() => incrementaGiornoSicurezzaReparto(rep.reparto)}
-                        style={{
-                          background: '#ecfdf5',
-                          border: '1px solid #a7f3d0',
-                          color: '#047857',
-                          borderRadius: '8px',
-                          padding: '3px 8px',
-                          fontSize: '0.7rem',
-                          fontWeight: 800,
-                          cursor: 'pointer',
-                        }}
-                      >
-                        +1 gg
-                      </button>
-                    </div>
-                  </article>
-                ))}
-            </div>
-
-            <div style={{ background: '#ffffff', borderRadius: '16px', padding: '16px', border: '1.5px solid #e2e8f0' }}>
-              <h3 style={{ margin: '0 0 10px', fontFamily: fontHeading, fontSize: '1rem', color: '#0f172a' }}>
-                Segnalazioni ({segnalazioniQualitaFiltrate.length})
-              </h3>
-              {segnalazioniQualitaFiltrate.length === 0 ? (
-                <p style={{ margin: 0, fontSize: '0.84rem', color: '#64748b' }}>
-                  Nessuna segnalazione per il filtro selezionato.
-                </p>
+              {eventiZonaFiltrati.length === 0 ? (
+                <div
+                  style={{
+                    background: '#ffffff',
+                    borderRadius: '14px',
+                    padding: '24px',
+                    textAlign: 'center',
+                    color: '#64748b',
+                    gridColumn: '1 / -1',
+                    fontSize: '0.86rem',
+                  }}
+                >
+                  Nessun evento trovato per questo filtro. Tocca <strong>+ Proponi evento</strong> per aggiungere una proposta!
+                </div>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {segnalazioniQualitaFiltrate.map((s) => (
-                    <div
-                      key={s.id}
+                eventiZonaFiltrati.map((ev) => {
+                  const autorePulito = extractBaseName(ev.autore) || 'Collega';
+                  const mioNome = extractBaseName(userProfile.nome).toLowerCase();
+                  const canChat = Boolean(autorePulito && autorePulito.toLowerCase() !== 'colleghi' && autorePulito.toLowerCase() !== mioNome);
+                  return (
+                    <article
+                      key={ev.id}
                       style={{
-                        background: '#f8fafc',
-                        border: '1px solid #e2e8f0',
-                        borderRadius: '12px',
-                        padding: '10px 12px',
+                        background: '#ffffff',
+                        borderRadius: '14px',
+                        padding: '15px',
+                        border: '1.5px solid #e2e8f0',
                         display: 'flex',
+                        flexDirection: 'column',
                         justifyContent: 'space-between',
-                        alignItems: 'center',
                         gap: '10px',
-                        flexWrap: 'wrap',
                       }}
                     >
                       <div>
-                        <div style={{ fontSize: '0.7rem', fontWeight: 700, color: '#2563eb' }}>
-                          {s.reparto} • {s.tipo}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '6px' }}>
+                          <span
+                            style={{
+                              fontFamily: fontHeading,
+                              fontSize: '0.7rem',
+                              fontWeight: 700,
+                              background: '#eff6ff',
+                              color: '#1d4ed8',
+                              padding: '3px 9px',
+                              borderRadius: '999px',
+                            }}
+                          >
+                            {ev.categoria}
+                          </span>
+                          <span style={{ fontSize: '0.72rem', color: '#0284c7', fontWeight: 700 }}>
+                            {ev.dataOra}
+                          </span>
                         </div>
-                        <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>{s.titolo}</div>
-                        <div style={{ fontSize: '0.82rem', color: '#475569' }}>{s.descrizione}</div>
+                        <h3 style={{ margin: '8px 0 4px', fontFamily: fontHeading, fontSize: '1rem', color: '#0f172a' }}>
+                          {ev.titolo}
+                        </h3>
+                        <div style={{ fontSize: '0.76rem', color: '#047857', fontWeight: 700, marginBottom: '6px' }}>
+                          📍 {ev.luogo}
+                        </div>
+                        <p style={{ margin: 0, color: '#475569', fontSize: '0.84rem', lineHeight: 1.45 }}>
+                          {ev.descrizione}
+                        </p>
                       </div>
-                      <select
-                        value={s.stato || 'Da verificare'}
-                        onChange={(e) => cambiaStatoSegnalazione(s, e.target.value)}
-                        style={{ padding: '6px 8px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.76rem', fontWeight: 700 }}
-                      >
-                        {STATI_SEGNALAZIONE.map((st) => (
-                          <option key={st} value={st}>
-                            {st}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  ))}
-                </div>
+
+                      <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ fontSize: '0.74rem', color: '#64748b', fontWeight: 700 }}>
+                          Proposto da {autorePulito}
+                        </span>
+                        {canChat && (
+                          <button
+                            type="button"
+                            onClick={() => apriChatPrivata({ id: ev.id, titolo: ev.titolo }, autorePulito)}
+                            style={{
+                              background: '#0f172a',
+                              color: '#fff',
+                              border: 'none',
+                              borderRadius: '8px',
+                              padding: '5px 10px',
+                              fontSize: '0.72rem',
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            Scrivi
+                          </button>
+                        )}
+                      </div>
+                    </article>
+                  );
+                })
               )}
             </div>
           </section>
         )}
 
-        {/* SEZIONE PAUSA GIOCO */}
         {sezioneAttiva === 'gioco' && (
           <section style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             <div className="tm-game-layout">
@@ -4045,7 +3900,6 @@ export default function App() {
           </section>
         )}
 
-        {/* SEZIONE CHAT */}
         {sezioneAttiva === 'chat' && (
           <section style={{ background: '#ffffff', borderRadius: '16px', padding: '16px', border: '1.5px solid #e2e8f0' }}>
             <h2 style={{ margin: '0 0 12px', fontFamily: fontHeading, fontSize: '1.08rem', color: '#0f172a' }}>
@@ -4124,7 +3978,6 @@ export default function App() {
         )}
       </main>
 
-      {/* BARRA DI NAVIGAZIONE INFERIORE FISSA */}
       <nav className="tm-bottom-nav" aria-label="Navigazione principale">
         <button
           type="button"
@@ -4202,14 +4055,13 @@ export default function App() {
         </button>
       </nav>
 
-      {/* MENU RAPIDO A COMPARSA (CONVENZIONI, REPARTI & QUALITÀ, PAUSA GIOCO, IMPOSTAZIONI ⚙️, ADMIN SOLO SE AUTORIZZATO) */}
       {showMoreMenu && (
         <div className="tm-more-backdrop" onClick={() => setShowMoreMenu(false)}>
           <div className="tm-more-sheet" onClick={(e) => e.stopPropagation()}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
               <div>
                 <div style={{ fontFamily: fontHeading, fontWeight: 800, fontSize: '1.04rem', color: '#0f172a' }}>
-                  Altro • TRACOLLEGHI MARKET
+                  Altro • {COMPANY_NAME} {COMPANY_SUBTITLE}
                 </div>
                 <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
                   Sezioni, impostazioni e strumenti
@@ -4245,7 +4097,6 @@ export default function App() {
                       setSezioneAttiva(sez.id);
                       setShowMoreMenu(false);
                       if (sez.id === 'gioco') fetchClassificaGioco();
-                      if (sez.id === 'qualita') fetchSegnalazioniQualita();
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
@@ -4266,7 +4117,6 @@ export default function App() {
                 );
               })}
 
-              {/* Rotella Impostazioni spostata qui dentro Altro */}
               <button
                 type="button"
                 className="tm-more-item"
@@ -4290,7 +4140,6 @@ export default function App() {
                 <span style={{ color: '#94a3b8', fontWeight: 800, fontSize: '1rem' }}>›</span>
               </button>
 
-              {/* Voce Admin visibile SOLO all'amministratore */}
               {canSeeAdminOption && (
                 <button
                   type="button"
@@ -4321,7 +4170,6 @@ export default function App() {
         </div>
       )}
 
-      {/* MODALE ADMIN & IMPORTAZIONE MASSIVA BADGE */}
       {showAdminModal && (
         <div
           onClick={() => setShowAdminModal(false)}
@@ -4395,7 +4243,7 @@ export default function App() {
                 }}
               >
                 <div style={{ fontSize: '0.86rem', color: '#334155', fontWeight: 600 }}>
-                  Inserisci il PIN Amministratore per sbloccare la gestione badge (predefinito: <strong>2026</strong>).
+                  Inserisci il PIN Amministratore per sbloccare la gestione badge (predefinito: <strong>{DEFAULT_ADMIN_PIN}</strong>).
                 </div>
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <input
@@ -4431,7 +4279,6 @@ export default function App() {
               </form>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                {/* Tab interne Admin */}
                 <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                     <button
@@ -4501,7 +4348,6 @@ export default function App() {
                   </button>
                 </div>
 
-                {/* TAB 1: IMPORTAZIONE MASSIVA */}
                 {adminTab === 'importa' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     <div
@@ -4642,7 +4488,6 @@ export default function App() {
                   </div>
                 )}
 
-                {/* TAB 2: ELENCO BADGE + AGGIUNTA SINGOLA */}
                 {adminTab === 'elenco' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     <form
@@ -4799,7 +4644,6 @@ export default function App() {
                   </div>
                 )}
 
-                {/* TAB 3: REGOLE & PIN */}
                 {adminTab === 'sicurezza' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     <div
@@ -4884,7 +4728,6 @@ export default function App() {
         </div>
       )}
 
-      {/* MODALE SCHEDA DETTAGLIO ANNUNCIO / RICHIESTA */}
       {schedaAnnuncio && (() => {
         const { item, isCercoAiutoCard } = schedaAnnuncio;
         const foto = normalizeImages(item);
@@ -5004,7 +4847,6 @@ export default function App() {
         );
       })()}
 
-      {/* MODALE PUBBLICA ANNUNCIO / RICHIESTA CON MACCHINA FOTOGRAFICA IN ALTO */}
       {showPublishModal && (
         <div
           onClick={() => setShowPublishModal(false)}
@@ -5049,7 +4891,6 @@ export default function App() {
             )}
 
             <form onSubmit={handleSubmitAnnuncio} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {/* MACCHINA FOTOGRAFICA IN ALTO CLICCABILE PER INSERIRE FOTO */}
               <div>
                 <label
                   style={{
@@ -5118,7 +4959,6 @@ export default function App() {
                 )}
               </div>
 
-              {/* TUTTI GLI ALTRI CAMPI SOTTO LA MACCHINA FOTOGRAFICA */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 700, marginBottom: '4px' }}>Categoria</label>
@@ -5247,7 +5087,6 @@ export default function App() {
         </div>
       )}
 
-      {/* MODALE IMPOSTAZIONI & GESTIONE ANNUNCI */}
       {showSettingsModal && (
         <div
           onClick={() => setShowSettingsModal(false)}
@@ -5440,7 +5279,6 @@ export default function App() {
         </div>
       )}
 
-      {/* MODALE MODIFICA ANNUNCIO */}
       {annuncioInModifica && (
         <div
           onClick={() => setAnnuncioInModifica(null)}
@@ -5531,7 +5369,6 @@ export default function App() {
         </div>
       )}
 
-      {/* MODALE CONFERMA ELIMINAZIONE */}
       {annuncioDaEliminare && (
         <div
           onClick={() => setAnnuncioDaEliminare(null)}
@@ -5565,7 +5402,6 @@ export default function App() {
         </div>
       )}
 
-      {/* MODALE CHAT PRIVATA */}
       {chatAperta && (
         <div
           onClick={() => setChatAperta(null)}
@@ -5653,7 +5489,6 @@ export default function App() {
         </div>
       )}
 
-      {/* MODALE VALUTAZIONE STELLE COLLEGA */}
       {utenteDaValutare && (
         <div
           onClick={() => setUtenteDaValutare(null)}
@@ -5698,73 +5533,6 @@ export default function App() {
                 </button>
                 <button type="submit" disabled={invioValutazione} style={{ padding: '8px 15px', borderRadius: '10px', border: 'none', background: '#2563eb', color: '#fff', fontFamily: fontHeading, fontWeight: 800, cursor: 'pointer' }}>
                   {invioValutazione ? 'Invio...' : 'Salva'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* MODALE AGGIORNA KPI REPARTO */}
-      {repartoInModificaKpi && (
-        <div
-          onClick={() => setRepartoInModificaKpi(null)}
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(15, 23, 42, 0.56)',
-            backdropFilter: 'blur(6px)',
-            WebkitBackdropFilter: 'blur(6px)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '16px',
-            zIndex: 85,
-          }}
-        >
-          <div onClick={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: '20px', padding: '20px', width: '100%', maxWidth: '400px' }}>
-            <h3 style={{ margin: '0 0 12px', fontFamily: fontHeading, fontSize: '1.05rem', color: '#0f172a' }}>
-              KPI • {repartoInModificaKpi}
-            </h3>
-            <form onSubmit={handleSalvaKpiReparto} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 700, marginBottom: '4px' }}>Giorni senza infortuni</label>
-                <input
-                  type="number"
-                  min="0"
-                  value={kpiEditForm.giorniSenzaInfortuni}
-                  onChange={(e) => setKpiEditForm((prev) => ({ ...prev, giorniSenzaInfortuni: e.target.value }))}
-                  style={{ width: '100%', boxSizing: 'border-box', padding: '9px 11px', borderRadius: '10px', border: '1px solid #cbd5e1' }}
-                />
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 700, marginBottom: '4px' }}>Livello qualità (%)</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  max="100"
-                  value={kpiEditForm.livelloQualita}
-                  onChange={(e) => setKpiEditForm((prev) => ({ ...prev, livelloQualita: e.target.value }))}
-                  style={{ width: '100%', boxSizing: 'border-box', padding: '9px 11px', borderRadius: '10px', border: '1px solid #cbd5e1' }}
-                />
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 700, marginBottom: '4px' }}>Infortuni registrati</label>
-                <input
-                  type="number"
-                  min="0"
-                  value={kpiEditForm.infortuniAnno}
-                  onChange={(e) => setKpiEditForm((prev) => ({ ...prev, infortuniAnno: e.target.value }))}
-                  style={{ width: '100%', boxSizing: 'border-box', padding: '9px 11px', borderRadius: '10px', border: '1px solid #cbd5e1' }}
-                />
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '4px' }}>
-                <button type="button" onClick={() => setRepartoInModificaKpi(null)} style={{ padding: '8px 13px', borderRadius: '10px', border: '1px solid #cbd5e1', background: '#fff', fontWeight: 700, cursor: 'pointer' }}>
-                  Annulla
-                </button>
-                <button type="submit" style={{ padding: '8px 15px', borderRadius: '10px', border: 'none', background: '#0f172a', color: '#fff', fontFamily: fontHeading, fontWeight: 800, cursor: 'pointer' }}>
-                  Salva KPI
                 </button>
               </div>
             </form>
