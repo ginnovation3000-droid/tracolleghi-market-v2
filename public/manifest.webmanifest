@@ -4,8 +4,8 @@
   "description": "La bacheca interna per gli scambi tra colleghi",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#f4f6fa",
-  "theme_color": "#1b365d",
+  "background_color": "#090d16",
+  "theme_color": "#090d16",
   "icons": [
     {
       "src": "/icona-tracolleghi.jpg",
