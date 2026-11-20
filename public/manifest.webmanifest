@@ -8,12 +8,12 @@
   "theme_color": "#090d16",
   "icons": [
     {
-      "src": "/icona-tracolleghi.jpg",
+      "src": "/icona-full-v2.jpg",
       "sizes": "192x192",
       "type": "image/jpeg"
     },
     {
-      "src": "/icona-tracolleghi.jpg",
+      "src": "/icona-full-v2.jpg",
       "sizes": "512x512",
       "type": "image/jpeg"
     }
