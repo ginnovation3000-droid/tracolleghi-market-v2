@@ -468,6 +468,43 @@ export default function App() {
   const waitingWorkerRef = useRef(null);
   const profilePanelRef = useRef(null);
 
+  // Video intro al primo caricamento e a ogni nuovo aggiornamento
+  const INTRO_VIDEO_VERSION = '2026-11-20-v1';
+  const introVideoRef = useRef(null);
+  const [introMuted, setIntroMuted] = useState(true);
+  const [showIntroVideo, setShowIntroVideo] = useState(() => {
+    try {
+      return localStorage.getItem('tracolleghi_intro_seen_version') !== INTRO_VIDEO_VERSION;
+    } catch {
+      return false;
+    }
+  });
+
+  function segnaIntroPerAggiornamento() {
+    try {
+      localStorage.removeItem('tracolleghi_intro_seen_version');
+    } catch {}
+  }
+
+  function chiudiIntroVideo() {
+    setShowIntroVideo(false);
+    setIntroMuted(true);
+    try {
+      localStorage.setItem('tracolleghi_intro_seen_version', INTRO_VIDEO_VERSION);
+    } catch {}
+  }
+
+  function toggleIntroAudio() {
+    const nextMuted = !introMuted;
+    setIntroMuted(nextMuted);
+    if (introVideoRef.current) {
+      introVideoRef.current.muted = nextMuted;
+      if (!nextMuted && introVideoRef.current.paused) {
+        introVideoRef.current.play().catch(() => {});
+      }
+    }
+  }
+
   useEffect(() => {
     const link = document.createElement('link');
     link.rel = 'stylesheet';
@@ -496,6 +533,7 @@ export default function App() {
     const notifyWaitingWorker = (worker) => {
       if (!worker || !mounted) return;
       waitingWorkerRef.current = worker;
+      segnaIntroPerAggiornamento();
       setSwUpdateAvailable(true);
       setSwBannerDismissed(false);
     };
@@ -536,6 +574,7 @@ export default function App() {
 
   function applicaAggiornamentoApp() {
     setSwUpdating(true);
+    segnaIntroPerAggiornamento();
     const waiting = waitingWorkerRef.current;
     if (waiting) {
       waiting.postMessage({ type: 'SKIP_WAITING' });
@@ -2511,6 +2550,85 @@ export default function App() {
 
   return (
     <div style={{ minHeight: '100vh', background: '#f8fafc', color: '#0f172a', fontFamily: fontBody }}>
+      {showIntroVideo && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 120,
+            background: '#090d16',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px',
+          }}
+        >
+          <video
+            ref={introVideoRef}
+            src="/intro-tracolleghi.mp4"
+            autoPlay
+            muted={introMuted}
+            playsInline
+            onEnded={chiudiIntroVideo}
+            onError={chiudiIntroVideo}
+            style={{
+              width: '100%',
+              maxWidth: '480px',
+              maxHeight: '82vh',
+              borderRadius: '18px',
+              objectFit: 'cover',
+              boxShadow: '0 20px 50px rgba(0, 0, 0, 0.55)',
+            }}
+          />
+          <div
+            style={{
+              position: 'fixed',
+              top: 'calc(18px + env(safe-area-inset-top))',
+              right: '18px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              zIndex: 121,
+            }}
+          >
+            <button
+              type="button"
+              onClick={toggleIntroAudio}
+              aria-label={introMuted ? 'Attiva audio video' : 'Disattiva audio video'}
+              style={{
+                background: introMuted ? 'rgba(15, 23, 42, 0.75)' : 'rgba(6, 182, 212, 0.28)',
+                color: '#ffffff',
+                border: introMuted ? '1px solid rgba(255, 255, 255, 0.25)' : '1px solid #38bdf8',
+                borderRadius: '999px',
+                padding: '7px 12px',
+                fontFamily: fontBody,
+                fontSize: '0.78rem',
+                fontWeight: 800,
+                cursor: 'pointer',
+              }}
+            >
+              {introMuted ? '🔇 Audio' : '🔊 Audio'}
+            </button>
+            <button
+              type="button"
+              onClick={chiudiIntroVideo}
+              style={{
+                background: 'rgba(15, 23, 42, 0.75)',
+                color: '#ffffff',
+                border: '1px solid rgba(255, 255, 255, 0.25)',
+                borderRadius: '999px',
+                padding: '7px 14px',
+                fontFamily: fontBody,
+                fontSize: '0.78rem',
+                fontWeight: 800,
+                cursor: 'pointer',
+              }}
+            >
+              Salta ›
+            </button>
+          </div>
+        </div>
+      )}
       <style>{`
         @keyframes tm-pulsar {
           0% { background-position: 0% 50%; }
