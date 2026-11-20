@@ -7,13 +7,25 @@ const SUPABASE_KEY = 'sb_publishable_YQvIcQl-DbTD48tlMuIdGA_5EmW-fW_';
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-const SEZIONI_APP = [
-  { id: 'bacheca', label: 'Bacheca', icon: '🛍️' },
-  { id: 'cerco_aiuto', label: 'Cerco / Aiuto', icon: '🤝' },
-  { id: 'convenzioni', label: 'Convenzioni', icon: '🏷️' },
-  { id: 'qualita', label: 'Reparti & Qualità', icon: '📊' },
-  { id: 'gioco', label: 'Pausa Gioco', icon: '🎮' },
-  { id: 'chat', label: 'Chat', icon: '💬' },
+const SEZIONI_EXTRA = [
+  {
+    id: 'convenzioni',
+    label: 'Convenzioni',
+    icon: '🏷️',
+    desc: 'Sconti e codici partner per i colleghi',
+  },
+  {
+    id: 'qualita',
+    label: 'Reparti & Qualità',
+    icon: '📊',
+    desc: 'Giorni senza infortuni, KPI e segnalazioni',
+  },
+  {
+    id: 'gioco',
+    label: 'Pausa Gioco',
+    icon: '🎮',
+    desc: 'Sfida lampo da 20s e classifica reparti',
+  },
 ];
 
 const MACRO_CATEGORIE = [
@@ -304,6 +316,15 @@ function cleanDescrizione(desc) {
     .trim();
 }
 
+function formatPrezzoCard(item) {
+  if (item.tipo === 'In regalo' || item.prezzo === 0) return 'In regalo';
+  if (item.prezzo != null) {
+    const val = Number(item.prezzo).toFixed(2).replace('.', ',');
+    return `€ ${val}${item.tipo === 'A noleggio' ? '/gg' : ''}`;
+  }
+  return item.tipo || 'In vendita';
+}
+
 function renderStarsInline(media, totale) {
   const arrotondato = Math.round(media || 0);
   return (
@@ -394,7 +415,6 @@ export default function App() {
           });
         });
 
-        // Controllo periodico per intercettare nuovi deploy su Vercel mentre l'app resta aperta
         updateInterval = setInterval(() => {
           reg.update().catch(() => {});
         }, 60000);
@@ -421,8 +441,9 @@ export default function App() {
     }
   }
 
-  // Sezione attiva dell'app unica: bacheca | cerco_aiuto | convenzioni | qualita | gioco | chat
+  // Sezione attiva: bacheca | cerco_aiuto | convenzioni | qualita | gioco | chat
   const [sezioneAttiva, setSezioneAttiva] = useState('bacheca');
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [filtroCercoAiuto, setFiltroCercoAiuto] = useState('Tutti');
   const [filtroConvenzioneCat, setFiltroConvenzioneCat] = useState('Tutte');
   const [filtroRepartoQualita, setFiltroRepartoQualita] = useState('Tutti');
@@ -503,7 +524,7 @@ export default function App() {
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [settingsTab, setSettingsTab] = useState('attivi');
 
-  // Preferiti (cuoricino ❤️) + notifica quando un preferito viene venduto
+  // Preferiti (cuoricino) + notifica quando un preferito viene venduto
   const [preferitiIds, setPreferitiIds] = useState(() => {
     try {
       const saved = JSON.parse(localStorage.getItem('tracolleghi_preferiti_v1'));
@@ -628,6 +649,7 @@ export default function App() {
   const [comboGioco, setComboGioco] = useState(0);
   const [cellaBersaglio, setCellaBersaglio] = useState({ index: 4, item: BERSAGLI_GIOCO[0], id: 1 });
   const [feedbackColpo, setFeedbackColpo] = useState('');
+  const bersaglioIndexRef = useRef(4);
   const [classificaGioco, setClassificaGioco] = useState(() => {
     try {
       const saved = JSON.parse(localStorage.getItem('tracolleghi_classifica_v1'));
@@ -703,6 +725,7 @@ export default function App() {
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === 'Escape') {
+        setShowMoreMenu(false);
         setShowPublishModal(false);
         setShowProfileModal(false);
         setShowSettingsModal(false);
@@ -931,8 +954,8 @@ export default function App() {
     const primo = nuoviVenduti[0];
     const testoAvviso =
       nuoviVenduti.length === 1
-        ? `❤️ Il tuo preferito "${primo.titolo}" è stato segnato come VENDUTO!`
-        : `❤️ ${nuoviVenduti.length} annunci tra i tuoi preferiti sono stati venduti (tra cui "${primo.titolo}").`;
+        ? `Il tuo preferito "${primo.titolo}" è stato segnato come VENDUTO!`
+        : `${nuoviVenduti.length} annunci tra i tuoi preferiti sono stati venduti (tra cui "${primo.titolo}").`;
 
     setAvviso(testoAvviso);
     setTimeout(() => setAvviso(''), 5000);
@@ -978,6 +1001,7 @@ export default function App() {
     else if (r < 0.95) item = BERSAGLI_GIOCO[4];
     else item = BERSAGLI_GIOCO[5];
 
+    bersaglioIndexRef.current = idx;
     setCellaBersaglio({ index: idx, item, id: Date.now() + Math.random() });
   }
 
@@ -1068,10 +1092,10 @@ export default function App() {
   useEffect(() => {
     if (!giocoAttivo) return;
     const mover = setInterval(() => {
-      generaProssimoBersaglio(cellaBersaglio.index);
+      generaProssimoBersaglio(bersaglioIndexRef.current);
     }, 950);
     return () => clearInterval(mover);
-  }, [giocoAttivo, cellaBersaglio.index]);
+  }, [giocoAttivo]);
 
   useEffect(() => {
     if (giocoFinito && punteggioGioco > 0) {
@@ -1152,8 +1176,8 @@ export default function App() {
 
   function apriModaleValutaUtente(nomeCollega) {
     if (!userProfile.registrato || !userProfile.nome.trim()) {
-      setShowProfileModal(true);
       setErrore('Registrati prima con Badge o Email aziendale per lasciare una valutazione con stelle.');
+      setShowProfileModal(true);
       return;
     }
     const nomePulito = extractBaseName(nomeCollega);
@@ -1397,6 +1421,7 @@ export default function App() {
 
   function apriModalePubblica(modalitaIniziale = sezioneAttiva) {
     setErrore('');
+    setShowMoreMenu(false);
     if (modalitaIniziale === 'qualita') {
       setQualitaForm((prev) => ({
         ...prev,
@@ -1406,8 +1431,8 @@ export default function App() {
       return;
     }
     if (!userProfile.registrato || !userProfile.nome.trim()) {
-      setShowProfileModal(true);
       setErrore('Registrati prima con Badge o Email aziendale per pubblicare.');
+      setShowProfileModal(true);
       return;
     }
     if (modalitaIniziale === 'cerco_aiuto') {
@@ -1464,8 +1489,8 @@ export default function App() {
     e.preventDefault();
     if (!userProfile.registrato || !userProfile.nome.trim()) {
       setShowPublishModal(false);
-      setShowProfileModal(true);
       setErrore('Registrati prima con Badge o Email aziendale per pubblicare.');
+      setShowProfileModal(true);
       return;
     }
 
@@ -1710,7 +1735,7 @@ export default function App() {
   }, [annunci, filtroCategoria, filtroTipo, ricerca, soloPreferiti, preferitiIds]);
 
   const ultimiAnnunciPerVetrinaGioco = useMemo(() => {
-    return annunci.filter((item) => !isPostCercoAiuto(item) && !isAnnuncioVenduto(item)).slice(0, 3);
+    return annunci.filter((item) => !isPostCercoAiuto(item) && !isAnnuncioVenduto(item)).slice(0, 4);
   }, [annunci]);
 
   const postCercoAiutoFiltrati = useMemo(() => {
@@ -1775,26 +1800,6 @@ export default function App() {
     return Array.from(mapThreads.values()).reverse();
   }, [messaggi, userProfile.nome, annunci]);
 
-  function getMittentiRicevuti(annuncioId) {
-    const mioNome = extractBaseName(userProfile.nome).toLowerCase();
-    if (!mioNome) return [];
-    const visti = new Set();
-    const mittenti = [];
-    for (const m of messaggi) {
-      if (String(m.annuncio_id) !== String(annuncioId)) continue;
-      const mittPulito = extractBaseName(m.mittente);
-      const destPulito = extractBaseName(m.destinatario);
-      if (mittPulito && mittPulito.toLowerCase() !== mioNome && (!destPulito || destPulito.toLowerCase() === mioNome)) {
-        const key = mittPulito.toLowerCase();
-        if (!visti.has(key)) {
-          visti.add(key);
-          mittenti.push(mittPulito);
-        }
-      }
-    }
-    return mittenti;
-  }
-
   const messaggiChatAttiva = useMemo(() => {
     if (!chatAperta || !userProfile.nome) return [];
     const mioNome = extractBaseName(userProfile.nome).toLowerCase();
@@ -1815,8 +1820,8 @@ export default function App() {
 
   function apriChatPrivata(annuncio, altroUtente) {
     if (!userProfile.registrato || !userProfile.nome.trim()) {
-      setShowProfileModal(true);
       setErrore('Registrati prima con Badge o Email aziendale per avviare una chat privata.');
+      setShowProfileModal(true);
       return;
     }
     const nomePulito = extractBaseName(altroUtente);
@@ -1864,323 +1869,140 @@ export default function App() {
   const fontBody = "'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif";
 
   const listaAnnunciImpostazioni = settingsTab === 'attivi' ? mieiAnnunciAttivi : mieiAnnunciVenduti;
+  const sezioneExtraAttiva = SEZIONI_EXTRA.find((s) => s.id === sezioneAttiva);
 
-  function renderCardAnnuncio(item, isCercoAiutoCard = false) {
+  function renderCardCatalogo(item, isCercoAiutoCard = false) {
     const foto = normalizeImages(item);
-    const pagamentiItem = !isCercoAiutoCard ? extractPagamentiFromDesc(item.descrizione) : [];
     const venduto = isAnnuncioVenduto(item);
-    const descrizionePulita = cleanDescrizione(item.descrizione);
+    const autorePulito = extractBaseName(item.autore) || 'Collega';
     const mioNome = extractBaseName(userProfile.nome).toLowerCase();
-    const autorePulito = extractBaseName(item.autore);
     const isOwner = Boolean(mioNome && autorePulito.toLowerCase() === mioNome);
-    const mittentiRicevuti = isOwner ? getMittentiRicevuti(item.id) : [];
     const isPreferito = preferitiIds.includes(String(item.id));
     const statsAutore = getStatsUtente(autorePulito);
 
     return (
       <article
         key={item.id}
-        style={{
-          background: '#fff',
-          borderRadius: '16px',
-          overflow: 'hidden',
-          boxShadow: '0 2px 12px rgba(15, 23, 42, 0.05)',
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'space-between',
-          opacity: venduto ? 0.85 : 1,
-          position: 'relative',
-          border: isCercoAiutoCard
-            ? '1px solid #bfdbfe'
-            : venduto
-            ? '1px solid #fecaca'
-            : '1px solid transparent',
-        }}
+        className="tm-card-v"
+        style={{ opacity: venduto ? 0.85 : 1 }}
       >
-        <button
-          type="button"
-          onClick={() => togglePreferito(item.id)}
-          aria-label={isPreferito ? 'Rimuovi dai preferiti' : 'Aggiungi ai preferiti'}
-          title={isPreferito ? 'Rimuovi dai preferiti' : 'Salva nei preferiti'}
-          style={{
-            position: 'absolute',
-            top: '10px',
-            right: '10px',
-            zIndex: 5,
-            width: '34px',
-            height: '34px',
-            borderRadius: '50%',
-            border: isPreferito ? '1px solid #fecdd3' : '1px solid #e2e8f0',
-            background: 'rgba(255, 255, 255, 0.94)',
-            boxShadow: '0 2px 8px rgba(15, 23, 42, 0.14)',
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: '1rem',
-            cursor: 'pointer',
-          }}
-        >
-          {isPreferito ? '❤️' : '🤍'}
-        </button>
-
-        <div>
-          {foto.length > 0 && (
-            <div
-              onClick={() => setSchedaAnnuncio({ item, isCercoAiutoCard })}
-              style={{
-                position: 'relative',
-                display: 'grid',
-                gridTemplateColumns: foto.length === 1 ? '1fr' : 'repeat(2, 1fr)',
-                gap: '2px',
-                background: '#e2e8f0',
-                cursor: 'pointer',
-              }}
-            >
-              {foto.map((src, i) => (
-                <img
-                  key={i}
-                  src={src}
-                  alt={`${item.titolo} ${i + 1}`}
-                  style={{
-                    width: '100%',
-                    height: foto.length === 1 ? '185px' : '96px',
-                    objectFit: 'cover',
-                    display: 'block',
-                    filter: venduto ? 'grayscale(45%)' : 'none',
-                  }}
-                />
-              ))}
-              {venduto && (
-                <span
-                  style={{
-                    position: 'absolute',
-                    top: '10px',
-                    left: '10px',
-                    background: '#dc2626',
-                    color: '#fff',
-                    fontFamily: fontHeading,
-                    fontWeight: 800,
-                    fontSize: '0.76rem',
-                    padding: '4px 10px',
-                    borderRadius: '8px',
-                    letterSpacing: '0.04em',
-                  }}
-                >
-                  VENDUTO
-                </span>
-              )}
-            </div>
-          )}
-
-          <div style={{ padding: '14px 16px', paddingRight: foto.length === 0 ? '48px' : '16px' }}>
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                flexWrap: 'wrap',
-                gap: '6px',
-                marginBottom: '6px',
-              }}
-            >
-              <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
-                <span
-                  style={{
-                    fontFamily: fontHeading,
-                    fontSize: '0.72rem',
-                    fontWeight: 700,
-                    background: isCercoAiutoCard ? '#dbeafe' : '#eff6ff',
-                    color: isCercoAiutoCard ? '#1e40af' : '#1d4ed8',
-                    padding: '3px 9px',
-                    borderRadius: '999px',
-                  }}
-                >
-                  {isCercoAiutoCard ? item.tipo || 'Cerco / Mi serve' : item.categoria || 'Generale'}
-                </span>
-                {venduto && foto.length === 0 && (
-                  <span
-                    style={{
-                      fontFamily: fontHeading,
-                      fontSize: '0.72rem',
-                      fontWeight: 800,
-                      background: '#fee2e2',
-                      color: '#b91c1c',
-                      padding: '3px 9px',
-                      borderRadius: '999px',
-                    }}
-                  >
-                    VENDUTO
-                  </span>
-                )}
-              </div>
-
-              {!isCercoAiutoCard && (
-                <span
-                  style={{
-                    fontWeight: 700,
-                    color: venduto ? '#94a3b8' : '#0f766e',
-                    textDecoration: venduto ? 'line-through' : 'none',
-                    fontSize: '0.94rem',
-                  }}
-                >
-                  {item.tipo === 'In regalo' || item.prezzo === 0
-                    ? 'IN REGALO'
-                    : item.prezzo != null
-                    ? `€ ${item.prezzo}${item.tipo === 'A noleggio' ? '/gg' : ''}`
-                    : item.tipo || 'In vendita'}
-                </span>
-              )}
-            </div>
-
-            <h3
-              onClick={() => setSchedaAnnuncio({ item, isCercoAiutoCard })}
-              style={{ margin: '6px 0', fontFamily: fontHeading, fontSize: '1.06rem', cursor: 'pointer' }}
-            >
-              {item.titolo}
-            </h3>
-            <p style={{ margin: 0, color: '#475569', fontSize: '0.9rem', lineHeight: 1.45 }}>
-              {descrizionePulita}
-            </p>
-
-            {pagamentiItem.length > 0 && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px', marginTop: '10px' }}>
-                {pagamentiItem.map((p) => (
-                  <span
-                    key={p}
-                    style={{
-                      fontSize: '0.7rem',
-                      fontWeight: 700,
-                      background: /cripto/i.test(p) ? '#fef3c7' : '#f1f5f9',
-                      color: /cripto/i.test(p) ? '#92400e' : '#334155',
-                      border: /cripto/i.test(p) ? '1px solid #fde68a' : '1px solid #e2e8f0',
-                      padding: '2px 8px',
-                      borderRadius: '999px',
-                    }}
-                  >
-                    {p}
-                  </span>
-                ))}
-              </div>
+        <div className="tm-card-v-top">
+          <div
+            className="tm-card-v-author"
+            onClick={() => {
+              if (!isOwner && autorePulito) apriModaleValutaUtente(autorePulito);
+            }}
+          >
+            {item.autore_foto ? (
+              <img src={item.autore_foto} alt={autorePulito} className="tm-card-v-avatar" />
+            ) : (
+              <span className="tm-card-v-avatar">{autorePulito.charAt(0).toUpperCase()}</span>
             )}
+            <span className="tm-card-v-name">{autorePulito}</span>
           </div>
+
+          {statsAutore.totale > 0 && (
+            <span
+              style={{
+                fontSize: '0.7rem',
+                fontWeight: 700,
+                color: '#f59e0b',
+                flexShrink: 0,
+              }}
+            >
+              ★ {statsAutore.media.toFixed(1)}
+            </span>
+          )}
         </div>
 
         <div
-          style={{
-            padding: '12px 16px',
-            borderTop: '1px solid #f1f5f9',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: '8px',
-            flexWrap: 'wrap',
-          }}
+          className="tm-card-v-media"
+          onClick={() => setSchedaAnnuncio({ item, isCercoAiutoCard })}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
-            {item.autore_foto ? (
-              <img
-                src={item.autore_foto}
-                alt={item.autore}
-                style={{ width: '28px', height: '28px', borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }}
-              />
-            ) : null}
-            <div style={{ minWidth: 0 }}>
-              <div
-                style={{
-                  fontSize: '0.82rem',
-                  fontWeight: 600,
-                  color: '#334155',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {item.autore || 'Collega'}
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
-                {renderStarsInline(statsAutore.media, statsAutore.totale)}
-                {!isOwner && autorePulito && (
-                  <button
-                    type="button"
-                    onClick={() => apriModaleValutaUtente(autorePulito)}
-                    style={{
-                      background: '#fef3c7',
-                      color: '#b45309',
-                      border: '1px solid #fde68a',
-                      borderRadius: '6px',
-                      padding: '1px 6px',
-                      fontSize: '0.68rem',
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    {statsAutore.mieStelle > 0 ? `Tuo voto: ${statsAutore.mieStelle}★` : 'Valuta ★'}
-                  </button>
-                )}
-              </div>
+          {foto[0] ? (
+            <img
+              src={foto[0]}
+              alt={item.titolo}
+              style={{ filter: venduto ? 'grayscale(55%)' : 'none' }}
+            />
+          ) : (
+            <div
+              style={{
+                width: '100%',
+                height: '100%',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '4px',
+                color: '#64748b',
+                padding: '10px',
+                textAlign: 'center',
+              }}
+            >
+              <span style={{ fontSize: '1.5rem' }}>{isCercoAiutoCard ? '🤝' : '📦'}</span>
+              <span style={{ fontSize: '0.74rem', fontWeight: 700 }}>
+                {isCercoAiutoCard ? item.tipo || 'Richiesta' : 'Nessuna foto'}
+              </span>
             </div>
-          </div>
+          )}
 
-          <div style={{ display: 'flex', gap: '6px', flexShrink: 0, alignItems: 'center' }}>
-            {!isOwner && autorePulito && !venduto && (
-              <button
-                type="button"
-                onClick={() => apriChatPrivata(item, autorePulito)}
-                style={{
-                  background: '#1b365d',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: '9px',
-                  padding: '6px 11px',
-                  fontSize: '0.8rem',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                }}
-              >
-                {isCercoAiutoCard ? 'Rispondi' : 'Chatta'}
-              </button>
-            )}
+          {venduto && (
+            <span
+              style={{
+                position: 'absolute',
+                top: '8px',
+                left: '8px',
+                background: '#dc2626',
+                color: '#fff',
+                fontFamily: fontHeading,
+                fontWeight: 800,
+                fontSize: '0.66rem',
+                padding: '3px 7px',
+                borderRadius: '6px',
+                letterSpacing: '0.04em',
+              }}
+            >
+              VENDUTO
+            </span>
+          )}
 
-            {isOwner && mittentiRicevuti.length > 0 && (
-              <button
-                type="button"
-                onClick={() => apriChatPrivata(item, mittentiRicevuti[0])}
-                style={{
-                  background: '#2563eb',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: '9px',
-                  padding: '6px 10px',
-                  fontSize: '0.78rem',
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                }}
-              >
-                💬 Chat ({mittentiRicevuti.length})
-              </button>
-            )}
+          <button
+            type="button"
+            className="tm-card-v-heart"
+            aria-label={isPreferito ? 'Rimuovi dai preferiti' : 'Aggiungi ai preferiti'}
+            onClick={(e) => {
+              e.stopPropagation();
+              togglePreferito(item.id);
+            }}
+          >
+            {isPreferito ? '❤️' : '🤍'}
+          </button>
+        </div>
 
-            {isOwner && (
-              <button
-                type="button"
-                onClick={() => {
-                  setSettingsTab(venduto ? 'venduti' : 'attivi');
-                  setShowSettingsModal(true);
-                }}
-                style={{
-                  background: '#f1f5f9',
-                  color: '#334155',
-                  border: '1px solid #e2e8f0',
-                  borderRadius: '9px',
-                  padding: '5px 9px',
-                  fontSize: '0.75rem',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                }}
-              >
-                Gestisci
-              </button>
-            )}
+        <div
+          className="tm-card-v-body"
+          onClick={() => setSchedaAnnuncio({ item, isCercoAiutoCard })}
+        >
+          {!isCercoAiutoCard ? (
+            <div
+              className="tm-card-v-price"
+              style={{
+                color: venduto ? '#94a3b8' : '#0f172a',
+                textDecoration: venduto ? 'line-through' : 'none',
+              }}
+            >
+              {formatPrezzoCard(item)}
+            </div>
+          ) : (
+            <div className="tm-card-v-price" style={{ color: '#1d4ed8', fontSize: '0.84rem' }}>
+              {item.tipo || 'Cerco / Mi serve'}
+            </div>
+          )}
+
+          <div className="tm-card-v-title">{item.titolo}</div>
+          <div className="tm-card-v-meta">
+            {isCercoAiutoCard ? item.reparto || 'Colleghi' : item.categoria || 'Generale'}
           </div>
         </div>
       </article>
@@ -2188,7 +2010,7 @@ export default function App() {
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: '#f1f5f9', color: '#182230', fontFamily: fontBody }}>
+    <div style={{ minHeight: '100vh', background: '#f8fafc', color: '#0f172a', fontFamily: fontBody }}>
       <style>{`
         input, textarea, select {
           font-size: 16px !important;
@@ -2196,124 +2018,253 @@ export default function App() {
         .tm-container {
           max-width: 1280px;
           margin: 0 auto;
-          padding-left: 20px;
-          padding-right: 20px;
+          padding-left: 14px;
+          padding-right: 14px;
         }
-        .tm-header-bar {
+        @media (min-width: 768px) {
+          .tm-container {
+            padding-left: 24px;
+            padding-right: 24px;
+          }
+        }
+        .tm-top-header {
+          background: #ffffff;
+          border-bottom: 1px solid #e2e8f0;
+          position: sticky;
+          top: 0;
+          z-index: 40;
+        }
+        .tm-header-inner {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          gap: 16px;
+          gap: 10px;
+          padding-top: 10px;
+          padding-bottom: 10px;
         }
-        .tm-header-brand {
+        .tm-brand {
           display: flex;
           align-items: center;
-          gap: 12px;
+          gap: 9px;
           flex-shrink: 0;
+          cursor: pointer;
         }
-        .tm-header-logo {
-          width: 46px;
-          height: 46px;
-          border-radius: 12px;
+        .tm-brand-logo {
+          width: 34px;
+          height: 34px;
+          border-radius: 9px;
           object-fit: cover;
           display: block;
-          flex-shrink: 0;
-          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.24);
         }
-        .tm-header-title-wrap {
-          flex-shrink: 0;
-        }
-        .tm-header-title {
-          margin: 0;
+        .tm-brand-name {
           font-family: ${fontHeading};
           font-weight: 800;
-          font-size: 1.42rem;
+          font-size: 1.05rem;
           letter-spacing: -0.02em;
-          line-height: 1.1;
-          white-space: nowrap;
+          color: #1b365d;
+          line-height: 1.05;
         }
-        .tm-header-subtitle {
-          margin: 3px 0 0;
-          font-size: 0.74rem;
-          color: rgba(255, 255, 255, 0.85);
-          white-space: nowrap;
+        .tm-search-wrap {
+          flex: 1 1 auto;
+          min-width: 0;
+        }
+        .tm-search-input {
+          width: 100%;
+          box-sizing: border-box;
+          padding: 8px 12px;
+          border-radius: 10px;
+          border: 1px solid #e2e8f0;
+          background: #f1f5f9;
+          color: #0f172a;
+          font-family: ${fontBody};
+          outline: none;
+        }
+        .tm-search-input:focus {
+          background: #ffffff;
+          border-color: #2563eb;
         }
         .tm-header-actions {
           display: flex;
           align-items: center;
-          justify-content: flex-end;
-          gap: 8px;
-          min-width: 0;
-        }
-        .tm-profile-btn {
-          display: inline-flex;
-          align-items: center;
-          gap: 7px;
-          background: rgba(255, 255, 255, 0.16);
-          color: #fff;
-          border: 1px solid rgba(255, 255, 255, 0.28);
-          border-radius: 999px;
-          padding: 5px 12px 5px 5px;
-          cursor: pointer;
-          font-family: ${fontBody};
-          font-weight: 600;
-          font-size: 0.82rem;
-          backdrop-filter: blur(6px);
-          max-width: 190px;
-        }
-        .tm-profile-label {
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
-        }
-        .tm-main-tabs {
-          display: flex;
-          flex-wrap: nowrap;
-          overflow-x: auto;
-          gap: 8px;
-          padding-bottom: 6px;
-          margin-bottom: 10px;
-          border-bottom: 1px solid #e2e8f0;
-          scrollbar-width: thin;
-          -webkit-overflow-scrolling: touch;
-        }
-        .tm-categories-strip {
-          display: flex;
-          flex-wrap: nowrap;
-          overflow-x: auto;
-          gap: 8px;
-          padding-bottom: 4px;
-          margin-bottom: 10px;
-          scrollbar-width: thin;
-          -webkit-overflow-scrolling: touch;
-        }
-        .tm-category-pill {
-          white-space: nowrap;
+          gap: 6px;
           flex-shrink: 0;
         }
-        .tm-search-row {
+        .tm-icon-btn {
+          height: 34px;
+          border-radius: 999px;
+          border: 1px solid #e2e8f0;
+          background: #ffffff;
+          color: #1e293b;
+          font-family: ${fontBody};
+          font-size: 0.78rem;
+          font-weight: 700;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 5px;
+          padding: 0 10px;
+          cursor: pointer;
+          white-space: nowrap;
+        }
+        .tm-filter-strip {
           display: flex;
-          gap: 10px;
-          align-items: stretch;
-          flex-wrap: wrap;
+          flex-wrap: nowrap;
+          overflow-x: auto;
+          gap: 7px;
+          padding: 0 0 10px;
+          scrollbar-width: none;
+          -webkit-overflow-scrolling: touch;
+        }
+        .tm-filter-strip::-webkit-scrollbar {
+          display: none;
+        }
+        .tm-pill {
+          white-space: nowrap;
+          flex-shrink: 0;
+          padding: 6px 12px;
+          border-radius: 999px;
+          border: 1px solid #e2e8f0;
+          background: #ffffff;
+          color: #334155;
+          font-family: ${fontBody};
+          font-size: 0.78rem;
+          font-weight: 700;
+          cursor: pointer;
+        }
+        .tm-pill.is-active {
+          background: #1b365d;
+          border-color: #1b365d;
+          color: #ffffff;
         }
         .tm-board-wrapper {
-          padding-top: 18px;
-          padding-bottom: 108px;
+          padding-top: 14px;
+          padding-bottom: 92px;
         }
-        .tm-cards-grid {
+        .tm-grid-v {
           display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-          gap: 18px;
+          grid-template-columns: repeat(2, 1fr);
+          gap: 12px;
+        }
+        @media (min-width: 768px) {
+          .tm-grid-v {
+            grid-template-columns: repeat(4, 1fr);
+            gap: 18px;
+          }
+        }
+        @media (min-width: 1180px) {
+          .tm-grid-v {
+            grid-template-columns: repeat(5, 1fr);
+          }
+        }
+        .tm-card-v {
+          background: #ffffff;
+          border-radius: 10px;
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
+          border: 1px solid #f1f5f9;
+        }
+        .tm-card-v-top {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 7px 6px 8px;
+          gap: 6px;
+        }
+        .tm-card-v-author {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          min-width: 0;
+          cursor: pointer;
+        }
+        .tm-card-v-avatar {
+          width: 22px;
+          height: 22px;
+          border-radius: 50%;
+          object-fit: cover;
+          background: #eff6ff;
+          color: #1b365d;
+          font-size: 0.7rem;
+          font-weight: 800;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+        }
+        .tm-card-v-name {
+          font-size: 0.75rem;
+          color: #475569;
+          font-weight: 600;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .tm-card-v-media {
+          position: relative;
+          width: 100%;
+          aspect-ratio: 4 / 5;
+          background: #f1f5f9;
+          border-radius: 10px;
+          overflow: hidden;
+          cursor: pointer;
+        }
+        .tm-card-v-media img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          display: block;
+        }
+        .tm-card-v-heart {
+          position: absolute;
+          bottom: 8px;
+          right: 8px;
+          width: 30px;
+          height: 30px;
+          border-radius: 50%;
+          border: 1px solid #e2e8f0;
+          background: rgba(255, 255, 255, 0.95);
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 0.88rem;
+          cursor: pointer;
+          box-shadow: 0 2px 6px rgba(15, 23, 42, 0.14);
+        }
+        .tm-card-v-body {
+          padding: 8px 6px 10px;
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+          cursor: pointer;
+        }
+        .tm-card-v-price {
+          font-size: 0.95rem;
+          font-weight: 800;
+          color: #0f172a;
+        }
+        .tm-card-v-title {
+          font-size: 0.8rem;
+          color: #334155;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .tm-card-v-meta {
+          font-size: 0.72rem;
+          color: #64748b;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
         }
         .tm-kpi-summary {
           display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+          grid-template-columns: repeat(auto-fit, minmax(165px, 1fr));
           gap: 12px;
         }
         .tm-rep-grid {
           display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+          grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
           gap: 14px;
         }
         .tm-game-layout {
@@ -2322,77 +2273,117 @@ export default function App() {
           gap: 18px;
           align-items: start;
         }
-        .tm-fab-publish {
-          position: fixed;
-          bottom: 22px;
-          left: 50%;
-          transform: translateX(-50%);
-          z-index: 45;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          background: linear-gradient(135deg, #1b365d 0%, #2563eb 100%);
-          color: #ffffff;
-          border: 2px solid rgba(255, 255, 255, 0.92);
-          border-radius: 999px;
-          padding: 14px 34px;
-          font-family: ${fontHeading};
-          font-weight: 800;
-          font-size: 1.02rem;
-          letter-spacing: 0.02em;
-          cursor: pointer;
-          box-shadow: 0 12px 28px rgba(37, 99, 235, 0.38), 0 4px 10px rgba(15, 23, 42, 0.18);
-          transition: transform 0.16s ease, box-shadow 0.16s ease;
-        }
-        .tm-fab-publish:hover {
-          transform: translateX(-50%) translateY(-2px);
-          box-shadow: 0 16px 32px rgba(37, 99, 235, 0.45), 0 6px 14px rgba(15, 23, 42, 0.22);
-        }
-        .tm-fab-publish:active {
-          transform: translateX(-50%) scale(0.97);
-        }
         @media (max-width: 900px) {
-          .tm-container {
-            padding-left: 14px;
-            padding-right: 14px;
-          }
-          .tm-board-wrapper {
-            padding-top: 14px;
-            padding-bottom: 104px;
-          }
-          .tm-header-subtitle {
-            display: none;
-          }
           .tm-game-layout {
             grid-template-columns: 1fr;
           }
         }
-        @media (max-width: 640px) {
-          .tm-header-bar {
-            flex-direction: column;
-            align-items: stretch;
-            gap: 10px;
+        /* Barra di navigazione inferiore fissa */
+        .tm-bottom-nav {
+          position: fixed;
+          bottom: 0;
+          left: 0;
+          right: 0;
+          height: 62px;
+          background: #ffffff;
+          border-top: 1px solid #e2e8f0;
+          display: grid;
+          grid-template-columns: repeat(5, 1fr);
+          align-items: center;
+          z-index: 50;
+          padding-bottom: env(safe-area-inset-bottom);
+          box-shadow: 0 -4px 16px rgba(15, 23, 42, 0.06);
+        }
+        .tm-bottom-btn {
+          background: transparent;
+          border: none;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          gap: 2px;
+          font-size: 0.66rem;
+          font-weight: 700;
+          color: #64748b;
+          cursor: pointer;
+          padding: 4px 2px;
+          position: relative;
+        }
+        .tm-bottom-btn.is-active {
+          color: #2563eb;
+        }
+        .tm-bottom-plus {
+          width: 42px;
+          height: 42px;
+          border-radius: 50%;
+          border: none;
+          background: linear-gradient(135deg, #1b365d 0%, #2563eb 100%);
+          color: #ffffff;
+          font-size: 1.45rem;
+          font-weight: 700;
+          line-height: 1;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          box-shadow: 0 6px 16px rgba(37, 99, 235, 0.35);
+        }
+        /* Menu rapido a comparsa (Bottom Sheet) */
+        .tm-more-backdrop {
+          position: fixed;
+          inset: 0;
+          background: rgba(15, 23, 42, 0.45);
+          z-index: 65;
+          display: flex;
+          align-items: flex-end;
+          justify-content: center;
+        }
+        .tm-more-sheet {
+          width: 100%;
+          max-width: 540px;
+          background: #ffffff;
+          border-radius: 20px 20px 0 0;
+          padding: 16px 18px calc(20px + env(safe-area-inset-bottom));
+          box-shadow: 0 -10px 30px rgba(15, 23, 42, 0.18);
+        }
+        @media (min-width: 768px) {
+          .tm-more-backdrop {
+            align-items: center;
+            padding: 16px;
           }
-          .tm-header-brand {
-            justify-content: flex-start;
-            width: 100%;
+          .tm-more-sheet {
+            border-radius: 20px;
+            padding-bottom: 20px;
           }
-          .tm-header-logo {
-            width: 44px;
-            height: 44px;
-          }
-          .tm-header-title {
-            font-size: 1.24rem;
-          }
-          .tm-header-actions {
-            width: 100%;
-            justify-content: space-between;
-            padding-top: 8px;
-            border-top: 1px solid rgba(255, 255, 255, 0.14);
-          }
-          .tm-profile-btn {
-            max-width: calc(100% - 54px);
-          }
+        }
+        .tm-more-item {
+          width: 100%;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          padding: 12px 14px;
+          border-radius: 14px;
+          border: 1px solid #e2e8f0;
+          background: #f8fafc;
+          text-align: left;
+          cursor: pointer;
+        }
+        .tm-more-item.is-selected {
+          background: #eff6ff;
+          border-color: #2563eb;
+        }
+        .tm-more-icon {
+          width: 38px;
+          height: 38px;
+          border-radius: 11px;
+          background: #ffffff;
+          border: 1px solid #e2e8f0;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 1.2rem;
+          flex-shrink: 0;
         }
       `}</style>
 
@@ -2406,7 +2397,7 @@ export default function App() {
             color: '#f8fafc',
             borderBottom: '1px solid rgba(148, 163, 184, 0.25)',
             padding: '8px 0',
-            fontSize: '0.82rem',
+            fontSize: '0.8rem',
           }}
         >
           <div
@@ -2419,23 +2410,10 @@ export default function App() {
               flexWrap: 'wrap',
             }}
           >
+            <span>
+              <strong>Nuova versione disponibile</strong> • Aggiorna TRACOLLEGHI Market.
+            </span>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span
-                style={{
-                  width: '8px',
-                  height: '8px',
-                  borderRadius: '50%',
-                  background: '#38bdf8',
-                  display: 'inline-block',
-                  flexShrink: 0,
-                }}
-              />
-              <span>
-                <strong>Nuova versione di TRACOLLEGHI Market disponibile</strong> • Aggiorna per vedere le ultime novità.
-              </span>
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: 'auto' }}>
               <button
                 type="button"
                 onClick={applicaAggiornamentoApp}
@@ -2445,14 +2423,14 @@ export default function App() {
                   color: '#fff',
                   border: 'none',
                   borderRadius: '8px',
-                  padding: '5px 12px',
+                  padding: '5px 11px',
                   fontFamily: fontHeading,
                   fontWeight: 700,
-                  fontSize: '0.78rem',
+                  fontSize: '0.76rem',
                   cursor: 'pointer',
                 }}
               >
-                {swUpdating ? 'Aggiornamento...' : 'Aggiorna ora'}
+                {swUpdating ? 'Aggiornamento...' : 'Aggiorna'}
               </button>
               <button
                 type="button"
@@ -2462,9 +2440,8 @@ export default function App() {
                   background: 'transparent',
                   border: 'none',
                   color: '#94a3b8',
-                  fontSize: '0.95rem',
+                  fontSize: '0.92rem',
                   cursor: 'pointer',
-                  padding: '2px 6px',
                 }}
               >
                 ✕
@@ -2474,59 +2451,46 @@ export default function App() {
         </div>
       )}
 
-      <header
-        style={{
-          background: 'linear-gradient(135deg, #13294b 0%, #1b365d 52%, #2563eb 100%)',
-          color: '#fff',
-          padding: '12px 0',
-          position: 'sticky',
-          top: 0,
-          zIndex: 40,
-          boxShadow: '0 4px 14px rgba(19, 41, 75, 0.16)',
-        }}
-      >
-        <div className="tm-container tm-header-bar">
-          <div className="tm-header-brand">
-            <img
-              src="/icona-tracolleghi.jpg"
-              alt="TRACOLLEGHI Market"
-              className="tm-header-logo"
-              onError={(e) => {
-                e.currentTarget.style.display = 'none';
-              }}
-            />
-            <div className="tm-header-title-wrap">
-              <h1 className="tm-header-title">
-                TRACOLLEGHI <span style={{ color: '#93c5fd', fontWeight: 700 }}>Market</span>
-              </h1>
-              <p className="tm-header-subtitle">
-                L’app unica tra colleghi • Bacheca, Cerco/Aiuto, Convenzioni, Qualità, Gioco & Chat
-              </p>
+      {/* HEADER BIANCO MINIMAL CON RICERCA E FILTRI ORIZZONTALI */}
+      <header className="tm-top-header">
+        <div className="tm-container">
+          <div className="tm-header-inner">
+            <div className="tm-brand" onClick={() => setSezioneAttiva('bacheca')}>
+              <img
+                src="/icona-tracolleghi.jpg"
+                alt="TRACOLLEGHI Market"
+                className="tm-brand-logo"
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none';
+                }}
+              />
+              <span className="tm-brand-name">TRACOLLEGHI</span>
             </div>
-          </div>
 
-          <div className="tm-header-actions">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
-              {settings.badgeNonLetti > 0 && (
-                <span
-                  style={{
-                    background: '#ef4444',
-                    color: '#fff',
-                    fontSize: '0.72rem',
-                    fontWeight: 800,
-                    padding: '2px 7px',
-                    borderRadius: '999px',
-                    flexShrink: 0,
-                  }}
-                >
-                  {settings.badgeNonLetti}
-                </span>
-              )}
+            <div className="tm-search-wrap">
+              <input
+                type="search"
+                className="tm-search-input"
+                placeholder={
+                  sezioneAttiva === 'cerco_aiuto'
+                    ? 'Cerca richieste o passaggi...'
+                    : sezioneAttiva === 'convenzioni'
+                    ? 'Cerca convenzione o zona...'
+                    : sezioneAttiva === 'qualita'
+                    ? 'Cerca difetto o reparto...'
+                    : 'Cerca tra i colleghi...'
+                }
+                value={ricerca}
+                onChange={(e) => setRicerca(e.target.value)}
+              />
+            </div>
 
+            <div className="tm-header-actions">
               <button
                 type="button"
-                className="tm-profile-btn"
+                className="tm-icon-btn"
                 onClick={() => {
+                  setErrore('');
                   setAuthForm({
                     nome: userProfile.nome || '',
                     badge: userProfile.badge || '',
@@ -2541,462 +2505,144 @@ export default function App() {
                   <img
                     src={userProfile.fotoProfilo}
                     alt={userProfile.nome || 'Profilo'}
-                    style={{ width: '24px', height: '24px', borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }}
+                    style={{ width: '20px', height: '20px', borderRadius: '50%', objectFit: 'cover' }}
                   />
                 ) : (
-                  <span
-                    style={{
-                      width: '24px',
-                      height: '24px',
-                      borderRadius: '50%',
-                      background: '#ffffff',
-                      color: '#1b365d',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontWeight: 700,
-                      fontSize: '0.76rem',
-                      flexShrink: 0,
-                    }}
-                  >
-                    {(userProfile.nome || 'B').charAt(0).toUpperCase()}
-                  </span>
+                  <span>🪪</span>
                 )}
-                <span className="tm-profile-label">
+                <span>
                   {userProfile.registrato && userProfile.nome
-                    ? `${userProfile.nome}${userProfile.badge ? ` • #${userProfile.badge}` : ''}`
-                    : 'Accedi con Badge'}
+                    ? extractBaseName(userProfile.nome).split(' ')[0]
+                    : 'Badge'}
                 </span>
               </button>
-            </div>
 
-            <button
-              type="button"
-              aria-label="Impostazioni e Annunci"
-              title="Impostazioni & Gestione Annunci"
-              onClick={() => {
-                setSettingsTab('attivi');
-                setShowSettingsModal(true);
-              }}
-              style={{
-                width: '36px',
-                height: '36px',
-                borderRadius: '50%',
-                border: '1px solid rgba(255,255,255,0.28)',
-                background: 'rgba(255,255,255,0.16)',
-                color: '#fff',
-                fontSize: '1.05rem',
-                cursor: 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0,
-                backdropFilter: 'blur(6px)',
-              }}
-            >
-              ⚙️
-            </button>
+              <button
+                type="button"
+                className="tm-icon-btn"
+                aria-label="Impostazioni e Annunci"
+                onClick={() => {
+                  setSettingsTab('attivi');
+                  setShowSettingsModal(true);
+                }}
+              >
+                ⚙️
+              </button>
+            </div>
           </div>
+
+          {/* Pillole filtro per Bacheca */}
+          {sezioneAttiva === 'bacheca' && (
+            <div className="tm-filter-strip">
+              {MACRO_CATEGORIE.map((cat) => (
+                <button
+                  key={cat.id}
+                  type="button"
+                  className={`tm-pill ${filtroCategoria === cat.id ? 'is-active' : ''}`}
+                  onClick={() => setFiltroCategoria(cat.id)}
+                >
+                  {cat.icon} {cat.label}
+                </button>
+              ))}
+              {TIPI_ANNUNCIO.map((tipo) => (
+                <button
+                  key={tipo}
+                  type="button"
+                  className={`tm-pill ${filtroTipo === tipo ? 'is-active' : ''}`}
+                  onClick={() => setFiltroTipo(tipo)}
+                >
+                  {tipo}
+                </button>
+              ))}
+              <button
+                type="button"
+                className={`tm-pill ${soloPreferiti ? 'is-active' : ''}`}
+                onClick={() => setSoloPreferiti((prev) => !prev)}
+              >
+                ❤️ Preferiti ({preferitiIds.length})
+              </button>
+            </div>
+          )}
+
+          {/* Pillole filtro per Cerco / Aiuto */}
+          {sezioneAttiva === 'cerco_aiuto' && (
+            <div className="tm-filter-strip">
+              {SOTTOCATEGORIE_CERCO_AIUTO.map((sub) => (
+                <button
+                  key={sub}
+                  type="button"
+                  className={`tm-pill ${filtroCercoAiuto === sub ? 'is-active' : ''}`}
+                  onClick={() => setFiltroCercoAiuto(sub)}
+                >
+                  {sub}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Pillole filtro per Convenzioni */}
+          {sezioneAttiva === 'convenzioni' && (
+            <div className="tm-filter-strip">
+              {['Tutte', 'Food & Pausa', 'Auto & Moto', 'Sport & Benessere', 'Negozi & Servizi'].map((cat) => (
+                <button
+                  key={cat}
+                  type="button"
+                  className={`tm-pill ${filtroConvenzioneCat === cat ? 'is-active' : ''}`}
+                  onClick={() => setFiltroConvenzioneCat(cat)}
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Pillole filtro per Reparti & Qualità */}
+          {sezioneAttiva === 'qualita' && (
+            <div className="tm-filter-strip">
+              <button
+                type="button"
+                className="tm-pill is-active"
+                onClick={() => setShowQualitaForm((prev) => !prev)}
+              >
+                {showQualitaForm ? '✕ Chiudi modulo' : '+ Segnala difetto'}
+              </button>
+              {['Tutti', ...REPARTI_AZIENDA].map((rep) => (
+                <button
+                  key={rep}
+                  type="button"
+                  className={`tm-pill ${filtroRepartoQualita === rep ? 'is-active' : ''}`}
+                  onClick={() => setFiltroRepartoQualita(rep)}
+                >
+                  {rep}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </header>
 
-      <section
-        style={{
-          background: '#ffffff',
-          borderBottom: '1px solid #e2e8f0',
-          boxShadow: '0 4px 14px rgba(15, 23, 42, 0.04)',
-          padding: '10px 0 14px',
-        }}
-      >
-        <div className="tm-container">
-          <nav className="tm-main-tabs" aria-label="Sezioni principali">
-            {SEZIONI_APP.map((sez) => {
-              const attiva = sezioneAttiva === sez.id;
-              return (
-                <button
-                  key={sez.id}
-                  type="button"
-                  className="tm-category-pill"
-                  onClick={() => {
-                    setSezioneAttiva(sez.id);
-                    if (sez.id === 'chat') {
-                      setSettings((prev) => ({ ...prev, badgeNonLetti: 0 }));
-                      fetchMessaggi();
-                    }
-                    if (sez.id === 'gioco') {
-                      fetchClassificaGioco();
-                    }
-                    if (sez.id === 'qualita') {
-                      fetchSegnalazioniQualita();
-                    }
-                  }}
-                  style={{
-                    fontFamily: fontHeading,
-                    fontWeight: 800,
-                    fontSize: '0.86rem',
-                    padding: '8px 15px',
-                    borderRadius: '12px',
-                    border: attiva ? '1px solid #2563eb' : '1px solid #e2e8f0',
-                    background: attiva ? '#2563eb' : '#f8fafc',
-                    color: attiva ? '#fff' : '#1e293b',
-                    cursor: 'pointer',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '7px',
-                  }}
-                >
-                  <span>{sez.icon}</span>
-                  <span>{sez.label}</span>
-                  {sez.id === 'chat' && settings.badgeNonLetti > 0 && (
-                    <span
-                      style={{
-                        background: attiva ? '#fff' : '#ef4444',
-                        color: attiva ? '#2563eb' : '#fff',
-                        fontSize: '0.7rem',
-                        fontWeight: 800,
-                        padding: '1px 6px',
-                        borderRadius: '999px',
-                      }}
-                    >
-                      {settings.badgeNonLetti}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </nav>
-
-          {sezioneAttiva === 'bacheca' && (
-            <>
-              <div className="tm-categories-strip">
-                {MACRO_CATEGORIE.map((cat) => {
-                  const attiva = filtroCategoria === cat.id;
-                  return (
-                    <button
-                      key={cat.id}
-                      type="button"
-                      className="tm-category-pill"
-                      onClick={() => setFiltroCategoria(cat.id)}
-                      style={{
-                        fontFamily: fontHeading,
-                        fontWeight: 700,
-                        fontSize: '0.8rem',
-                        padding: '6px 12px',
-                        borderRadius: '10px',
-                        border: attiva ? '1px solid #1b365d' : '1px solid #e2e8f0',
-                        background: attiva ? '#1b365d' : '#f8fafc',
-                        color: attiva ? '#fff' : '#334155',
-                        cursor: 'pointer',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                      }}
-                    >
-                      <span>{cat.icon}</span>
-                      <span>{cat.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-
-              <div className="tm-search-row">
-                <div style={{ position: 'relative', flex: '1 1 320px' }}>
-                  <input
-                    type="search"
-                    placeholder="Cerca tra i colleghi (es. Bici, Trapano, Reparto...)"
-                    value={ricerca}
-                    onChange={(e) => setRicerca(e.target.value)}
-                    style={{
-                      width: '100%',
-                      boxSizing: 'border-box',
-                      padding: '10px 14px',
-                      borderRadius: '11px',
-                      border: '2px solid #cbd5e1',
-                      fontFamily: fontBody,
-                      background: '#f8fafc',
-                    }}
-                  />
-                </div>
-
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center' }}>
-                  {TIPI_ANNUNCIO.map((tipo) => {
-                    const attivo = filtroTipo === tipo;
-                    return (
-                      <button
-                        key={tipo}
-                        type="button"
-                        onClick={() => setFiltroTipo(tipo)}
-                        style={{
-                          fontFamily: fontHeading,
-                          fontWeight: 700,
-                          fontSize: '0.78rem',
-                          padding: '8px 12px',
-                          borderRadius: '10px',
-                          border: attivo ? '1px solid #2563eb' : '1px solid #dbe2ec',
-                          background: attivo ? '#eff6ff' : '#fff',
-                          color: attivo ? '#1d4ed8' : '#475569',
-                          cursor: 'pointer',
-                        }}
-                      >
-                        {tipo}
-                      </button>
-                    );
-                  })}
-
-                  <button
-                    type="button"
-                    onClick={() => setSoloPreferiti((prev) => !prev)}
-                    style={{
-                      fontFamily: fontHeading,
-                      fontWeight: 700,
-                      fontSize: '0.78rem',
-                      padding: '8px 12px',
-                      borderRadius: '10px',
-                      border: soloPreferiti ? '1px solid #e11d48' : '1px solid #dbe2ec',
-                      background: soloPreferiti ? '#fff1f2' : '#fff',
-                      color: soloPreferiti ? '#be123c' : '#475569',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    ❤️ Preferiti ({preferitiIds.length})
-                  </button>
-                </div>
-              </div>
-
-              <div
-                style={{
-                  marginTop: '8px',
-                  fontSize: '0.76rem',
-                  color: '#64748b',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  flexWrap: 'wrap',
-                  gap: '6px',
-                }}
-              >
-                <span>
-                  Mostrati <strong>{annunciFiltrati.length}</strong> annunci in bacheca • Tocca titolo o foto per i dettagli
-                </span>
-                {(filtroCategoria !== 'Tutte' || filtroTipo !== 'Tutti' || soloPreferiti || ricerca.trim()) && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setFiltroCategoria('Tutte');
-                      setFiltroTipo('Tutti');
-                      setSoloPreferiti(false);
-                      setRicerca('');
-                    }}
-                    style={{
-                      background: 'transparent',
-                      border: 'none',
-                      color: '#2563eb',
-                      fontWeight: 700,
-                      fontSize: '0.76rem',
-                      cursor: 'pointer',
-                      padding: 0,
-                    }}
-                  >
-                    Azzera filtri
-                  </button>
-                )}
-              </div>
-            </>
-          )}
-
-          {sezioneAttiva === 'cerco_aiuto' && (
-            <>
-              <div className="tm-categories-strip">
-                {SOTTOCATEGORIE_CERCO_AIUTO.map((sub) => {
-                  const attiva = filtroCercoAiuto === sub;
-                  return (
-                    <button
-                      key={sub}
-                      type="button"
-                      className="tm-category-pill"
-                      onClick={() => setFiltroCercoAiuto(sub)}
-                      style={{
-                        fontFamily: fontHeading,
-                        fontWeight: 700,
-                        fontSize: '0.8rem',
-                        padding: '6px 12px',
-                        borderRadius: '10px',
-                        border: attiva ? '1px solid #1b365d' : '1px solid #e2e8f0',
-                        background: attiva ? '#1b365d' : '#f8fafc',
-                        color: attiva ? '#fff' : '#334155',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      {sub}
-                    </button>
-                  );
-                })}
-              </div>
-              <input
-                type="search"
-                placeholder="Cerca richieste, passaggi turno, oggetti trovati o avvisi..."
-                value={ricerca}
-                onChange={(e) => setRicerca(e.target.value)}
-                style={{
-                  width: '100%',
-                  boxSizing: 'border-box',
-                  padding: '10px 14px',
-                  borderRadius: '11px',
-                  border: '2px solid #cbd5e1',
-                  fontFamily: fontBody,
-                  background: '#f8fafc',
-                }}
-              />
-            </>
-          )}
-
-          {sezioneAttiva === 'convenzioni' && (
-            <>
-              <div className="tm-categories-strip">
-                {['Tutte', 'Food & Pausa', 'Auto & Moto', 'Sport & Benessere', 'Negozi & Servizi'].map((cat) => {
-                  const attiva = filtroConvenzioneCat === cat;
-                  return (
-                    <button
-                      key={cat}
-                      type="button"
-                      className="tm-category-pill"
-                      onClick={() => setFiltroConvenzioneCat(cat)}
-                      style={{
-                        fontFamily: fontHeading,
-                        fontWeight: 700,
-                        fontSize: '0.8rem',
-                        padding: '6px 12px',
-                        borderRadius: '10px',
-                        border: attiva ? '1px solid #1b365d' : '1px solid #e2e8f0',
-                        background: attiva ? '#1b365d' : '#f8fafc',
-                        color: attiva ? '#fff' : '#334155',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      {cat}
-                    </button>
-                  );
-                })}
-              </div>
-              <input
-                type="search"
-                placeholder="Cerca convenzioni per locale, sconto o zona..."
-                value={ricerca}
-                onChange={(e) => setRicerca(e.target.value)}
-                style={{
-                  width: '100%',
-                  boxSizing: 'border-box',
-                  padding: '10px 14px',
-                  borderRadius: '11px',
-                  border: '2px solid #cbd5e1',
-                  fontFamily: fontBody,
-                  background: '#f8fafc',
-                }}
-              />
-            </>
-          )}
-
-          {sezioneAttiva === 'qualita' && (
-            <>
-              <div className="tm-categories-strip">
-                {['Tutti', ...REPARTI_AZIENDA].map((rep) => {
-                  const attiva = filtroRepartoQualita === rep;
-                  return (
-                    <button
-                      key={rep}
-                      type="button"
-                      className="tm-category-pill"
-                      onClick={() => setFiltroRepartoQualita(rep)}
-                      style={{
-                        fontFamily: fontHeading,
-                        fontWeight: 700,
-                        fontSize: '0.8rem',
-                        padding: '6px 12px',
-                        borderRadius: '10px',
-                        border: attiva ? '1px solid #1b365d' : '1px solid #e2e8f0',
-                        background: attiva ? '#1b365d' : '#f8fafc',
-                        color: attiva ? '#fff' : '#334155',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      {rep}
-                    </button>
-                  );
-                })}
-              </div>
-              <div className="tm-search-row">
-                <input
-                  type="search"
-                  placeholder="Cerca difetti ripetitivi, segnalazioni qualità o sicurezza..."
-                  value={ricerca}
-                  onChange={(e) => setRicerca(e.target.value)}
-                  style={{
-                    flex: '1 1 280px',
-                    boxSizing: 'border-box',
-                    padding: '10px 14px',
-                    borderRadius: '11px',
-                    border: '2px solid #cbd5e1',
-                    fontFamily: fontBody,
-                    background: '#f8fafc',
-                  }}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowQualitaForm((prev) => !prev)}
-                  style={{
-                    fontFamily: fontHeading,
-                    fontWeight: 800,
-                    fontSize: '0.82rem',
-                    padding: '10px 15px',
-                    borderRadius: '11px',
-                    border: 'none',
-                    background: '#1b365d',
-                    color: '#fff',
-                    cursor: 'pointer',
-                  }}
-                >
-                  {showQualitaForm ? 'Chiudi modulo' : '+ Segnala difetto / qualità'}
-                </button>
-              </div>
-            </>
-          )}
-
-          {sezioneAttiva === 'gioco' && (
-            <div style={{ fontSize: '0.84rem', color: '#475569', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
-              <span>
-                <strong>🎮 Sfida Pausa Caffè (20 secondi):</strong> tocca al volo ☕ (+10), 🛠️ (+15), ⭐ (+25), ⚡ (+35) ed evita ⚠️/💣!
-              </span>
-              <span style={{ fontWeight: 700, color: '#1b365d' }}>
-                Reparto attivo: {userProfile.reparto || 'Altro Reparto'}
-              </span>
-            </div>
-          )}
-        </div>
-      </section>
-
+      {/* CONTENUTO PRINCIPALE */}
       <main className="tm-container tm-board-wrapper">
         {showInstallBanner && (
           <div
             style={{
-              background: 'linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)',
-              border: '1px solid #93c5fd',
+              background: '#eff6ff',
+              border: '1px solid #bfdbfe',
               color: '#1e3a8a',
-              padding: '11px 14px',
-              borderRadius: '14px',
-              marginBottom: '16px',
+              padding: '9px 12px',
+              borderRadius: '12px',
+              marginBottom: '12px',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
-              gap: '10px',
+              gap: '8px',
               flexWrap: 'wrap',
-              fontSize: '0.85rem',
+              fontSize: '0.8rem',
             }}
           >
-            <div>
-              <strong>📲 App unica sul telefono:</strong> salva <strong>TRACOLLEGHI Market</strong> sulla Schermata Home
-              (su iPhone: <em>Condividi → Aggiungi alla schermata Home</em>; su Android: <em>Menu → Installa app</em>) per
-              averla sempre a portata di mano.
-            </div>
+            <span>
+              <strong>📲 Schermata Home:</strong> aggiungi <strong>TRACOLLEGHI Market</strong> all’app per aprirla in un tocco.
+            </span>
             <button
               type="button"
               onClick={() => {
@@ -3006,17 +2652,17 @@ export default function App() {
                 } catch {}
               }}
               style={{
-                background: '#fff',
+                background: '#ffffff',
                 border: '1px solid #93c5fd',
                 color: '#1e3a8a',
                 borderRadius: '8px',
-                padding: '4px 10px',
+                padding: '3px 9px',
                 fontWeight: 700,
-                fontSize: '0.78rem',
+                fontSize: '0.74rem',
                 cursor: 'pointer',
               }}
             >
-              OK, capito
+              OK
             </button>
           </div>
         )}
@@ -3026,100 +2672,106 @@ export default function App() {
             style={{
               background: '#dcfce7',
               color: '#166534',
-              padding: '12px 16px',
+              padding: '10px 14px',
               borderRadius: '12px',
-              marginBottom: '16px',
+              marginBottom: '12px',
               fontWeight: 600,
+              fontSize: '0.86rem',
             }}
           >
             {avviso}
           </div>
         )}
+
         {errore && !showPublishModal && !showProfileModal && !annuncioInModifica && (
           <div
             style={{
               background: '#fee2e2',
               color: '#991b1b',
-              padding: '12px 16px',
+              padding: '10px 14px',
               borderRadius: '12px',
-              marginBottom: '16px',
+              marginBottom: '12px',
               fontWeight: 600,
+              fontSize: '0.86rem',
             }}
           >
             {errore}
           </div>
         )}
 
+        {/* SEZIONE BACHECA (GRIGLIA 4:5) */}
         {sezioneAttiva === 'bacheca' && (
-          <section className="tm-cards-grid">
+          <section className="tm-grid-v">
             {annunciFiltrati.length === 0 ? (
               <div
                 style={{
-                  background: '#fff',
-                  borderRadius: '16px',
-                  padding: '32px',
-                  textAlign: 'center',
-                  color: '#64748b',
-                  gridColumn: '1 / -1',
-                }}
-              >
-                {soloPreferiti
-                  ? 'Non hai ancora salvato nessun annuncio nei preferiti. Tocca il cuoricino ❤️ su un annuncio per salvarlo qui!'
-                  : 'Nessun annuncio trovato con i filtri selezionati. Premi Pubblica qui in basso per inserire il primo!'}
-              </div>
-            ) : (
-              annunciFiltrati.map((item) => renderCardAnnuncio(item, false))
-            )}
-          </section>
-        )}
-
-        {sezioneAttiva === 'cerco_aiuto' && (
-          <section className="tm-cards-grid">
-            {postCercoAiutoFiltrati.length === 0 ? (
-              <div
-                style={{
-                  background: '#fff',
-                  borderRadius: '16px',
+                  background: '#ffffff',
+                  borderRadius: '14px',
                   padding: '28px',
                   textAlign: 'center',
                   color: '#64748b',
                   gridColumn: '1 / -1',
+                  fontSize: '0.88rem',
                 }}
               >
-                Nessuna richiesta o avviso attivo in questa categoria. Premi <strong>Pubblica</strong> per chiedere un aiuto,
-                un passaggio turno o segnalare un oggetto trovato!
+                {soloPreferiti
+                  ? 'Nessun annuncio salvato nei preferiti. Tocca il cuoricino su una card per salvarla qui.'
+                  : 'Nessun annuncio trovato con i filtri attivi. Premi + in basso per pubblicare il primo!'}
               </div>
             ) : (
-              postCercoAiutoFiltrati.map((item) => renderCardAnnuncio(item, true))
+              annunciFiltrati.map((item) => renderCardCatalogo(item, false))
             )}
           </section>
         )}
 
+        {/* SEZIONE CERCO / AIUTO */}
+        {sezioneAttiva === 'cerco_aiuto' && (
+          <section className="tm-grid-v">
+            {postCercoAiutoFiltrati.length === 0 ? (
+              <div
+                style={{
+                  background: '#ffffff',
+                  borderRadius: '14px',
+                  padding: '28px',
+                  textAlign: 'center',
+                  color: '#64748b',
+                  gridColumn: '1 / -1',
+                  fontSize: '0.88rem',
+                }}
+              >
+                Nessuna richiesta o avviso in questa categoria. Premi <strong>+</strong> per chiedere aiuto, un passaggio turno o segnalare un oggetto trovato.
+              </div>
+            ) : (
+              postCercoAiutoFiltrati.map((item) => renderCardCatalogo(item, true))
+            )}
+          </section>
+        )}
+
+        {/* SEZIONE CONVENZIONI */}
         {sezioneAttiva === 'convenzioni' && (
-          <section className="tm-cards-grid">
+          <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '14px' }}>
             {convenzioniFiltrate.map((conv) => {
               const copiato = codiceCopiatoId === conv.id;
               return (
                 <article
                   key={conv.id}
                   style={{
-                    background: '#fff',
-                    borderRadius: '16px',
-                    padding: '16px',
-                    boxShadow: '0 2px 12px rgba(15, 23, 42, 0.05)',
+                    background: '#ffffff',
+                    borderRadius: '14px',
+                    padding: '15px',
                     border: '1px solid #e2e8f0',
                     display: 'flex',
                     flexDirection: 'column',
                     justifyContent: 'space-between',
-                    gap: '12px',
+                    gap: '10px',
                   }}
                 >
                   <div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '6px' }}>
                       <span
                         style={{
                           fontFamily: fontHeading,
-                          fontSize: '0.72rem',
+                          fontSize: '0.7rem',
                           fontWeight: 700,
                           background: '#eff6ff',
                           color: '#1d4ed8',
@@ -3129,16 +2781,15 @@ export default function App() {
                       >
                         {conv.categoria}
                       </span>
-                      <span style={{ fontSize: '0.76rem', color: '#64748b', fontWeight: 600 }}>{conv.zona}</span>
+                      <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 600 }}>{conv.zona}</span>
                     </div>
-
-                    <h3 style={{ margin: '10px 0 4px', fontFamily: fontHeading, fontSize: '1.06rem', color: '#0f172a' }}>
+                    <h3 style={{ margin: '8px 0 4px', fontFamily: fontHeading, fontSize: '1rem', color: '#0f172a' }}>
                       {conv.locale}
                     </h3>
-                    <div style={{ fontWeight: 800, color: '#047857', fontSize: '0.96rem', marginBottom: '6px' }}>
-                      🎁 {conv.sconto}
+                    <div style={{ fontWeight: 800, color: '#047857', fontSize: '0.92rem', marginBottom: '4px' }}>
+                      {conv.sconto}
                     </div>
-                    <p style={{ margin: 0, color: '#475569', fontSize: '0.86rem', lineHeight: 1.45 }}>
+                    <p style={{ margin: 0, color: '#475569', fontSize: '0.82rem', lineHeight: 1.4 }}>
                       {conv.condizioni}
                     </p>
                   </div>
@@ -3148,30 +2799,29 @@ export default function App() {
                       background: '#f8fafc',
                       border: '1px dashed #cbd5e1',
                       borderRadius: '10px',
-                      padding: '8px 12px',
+                      padding: '8px 10px',
                       display: 'flex',
                       justifyContent: 'space-between',
                       alignItems: 'center',
                       gap: '8px',
-                      fontSize: '0.8rem',
                     }}
                   >
-                    <strong style={{ color: '#1b365d', letterSpacing: '0.03em' }}>{conv.codice}</strong>
+                    <strong style={{ color: '#1b365d', fontSize: '0.78rem' }}>{conv.codice}</strong>
                     <button
                       type="button"
                       onClick={() => handleCopiaCodiceConvenzione(conv)}
                       style={{
                         background: copiato ? '#047857' : '#1b365d',
-                        color: '#fff',
+                        color: '#ffffff',
                         border: 'none',
                         borderRadius: '8px',
                         padding: '4px 10px',
-                        fontSize: '0.74rem',
+                        fontSize: '0.72rem',
                         fontWeight: 700,
                         cursor: 'pointer',
                       }}
                     >
-                      {copiato ? 'Copiato ✓' : 'Copia codice'}
+                      {copiato ? 'Copiato ✓' : 'Copia'}
                     </button>
                   </div>
                 </article>
@@ -3180,71 +2830,27 @@ export default function App() {
           </section>
         )}
 
+        {/* SEZIONE REPARTI & QUALITÀ */}
         {sezioneAttiva === 'qualita' && (
-          <section style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+          <section style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             <div className="tm-kpi-summary">
-              <div
-                style={{
-                  background: '#fff',
-                  borderRadius: '16px',
-                  padding: '14px 16px',
-                  border: '1px solid #e2e8f0',
-                  boxShadow: '0 2px 10px rgba(15,23,42,0.04)',
-                }}
-              >
-                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b' }}>📈 LIVELLO QUALITÀ MEDIO</div>
-                <div style={{ fontFamily: fontHeading, fontSize: '1.45rem', fontWeight: 800, color: '#047857', marginTop: '4px' }}>
+              <div style={{ background: '#fff', borderRadius: '14px', padding: '14px', border: '1px solid #e2e8f0' }}>
+                <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748b' }}>QUALITÀ MEDIA</div>
+                <div style={{ fontFamily: fontHeading, fontSize: '1.4rem', fontWeight: 800, color: '#047857', marginTop: '4px' }}>
                   {riepilogoAziendaleQualita.qualitaMedia.toFixed(1)}%
                 </div>
-                <div style={{ fontSize: '0.74rem', color: '#475569', marginTop: '2px' }}>Media sui reparti attivi</div>
               </div>
-
-              <div
-                style={{
-                  background: '#fff',
-                  borderRadius: '16px',
-                  padding: '14px 16px',
-                  border: '1px solid #e2e8f0',
-                  boxShadow: '0 2px 10px rgba(15,23,42,0.04)',
-                }}
-              >
-                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b' }}>🛡️ INFORTUNI SEGNALATI</div>
-                <div
-                  style={{
-                    fontFamily: fontHeading,
-                    fontSize: '1.45rem',
-                    fontWeight: 800,
-                    color: riepilogoAziendaleQualita.infortuniTotali === 0 ? '#1d4ed8' : '#dc2626',
-                    marginTop: '4px',
-                  }}
-                >
+              <div style={{ background: '#fff', borderRadius: '14px', padding: '14px', border: '1px solid #e2e8f0' }}>
+                <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748b' }}>INFORTUNI TOTALI</div>
+                <div style={{ fontFamily: fontHeading, fontSize: '1.4rem', fontWeight: 800, color: '#1d4ed8', marginTop: '4px' }}>
                   {riepilogoAziendaleQualita.infortuniTotali}
                 </div>
-                <div style={{ fontSize: '0.74rem', color: '#475569', marginTop: '2px' }}>Totale aggregato reparti</div>
               </div>
-
-              <div
-                style={{
-                  background: '#fff',
-                  borderRadius: '16px',
-                  padding: '14px 16px',
-                  border: '1px solid #e2e8f0',
-                  boxShadow: '0 2px 10px rgba(15,23,42,0.04)',
-                }}
-              >
-                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b' }}>🔁 DIFETTI RIPETITIVI APERTI</div>
-                <div
-                  style={{
-                    fontFamily: fontHeading,
-                    fontSize: '1.45rem',
-                    fontWeight: 800,
-                    color: riepilogoAziendaleQualita.difettiRipetitiviAperti === 0 ? '#047857' : '#d97706',
-                    marginTop: '4px',
-                  }}
-                >
+              <div style={{ background: '#fff', borderRadius: '14px', padding: '14px', border: '1px solid #e2e8f0' }}>
+                <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748b' }}>DIFETTI APERTI</div>
+                <div style={{ fontFamily: fontHeading, fontSize: '1.4rem', fontWeight: 800, color: '#d97706', marginTop: '4px' }}>
                   {riepilogoAziendaleQualita.difettiRipetitiviAperti}
                 </div>
-                <div style={{ fontSize: '0.74rem', color: '#475569', marginTop: '2px' }}>In attesa di chiusura</div>
               </div>
             </div>
 
@@ -3252,34 +2858,33 @@ export default function App() {
               <form
                 onSubmit={handleSalvaSegnalazioneQualita}
                 style={{
-                  background: '#fff',
-                  borderRadius: '18px',
-                  padding: '18px',
+                  background: '#ffffff',
+                  borderRadius: '16px',
+                  padding: '16px',
                   border: '1px solid #93c5fd',
-                  boxShadow: '0 6px 20px rgba(37, 99, 235, 0.08)',
                   display: 'flex',
                   flexDirection: 'column',
-                  gap: '12px',
+                  gap: '10px',
                 }}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <h3 style={{ margin: 0, fontFamily: fontHeading, fontSize: '1.05rem', color: '#1b365d' }}>
-                    Nuova segnalazione per Caporeparto & Qualità
+                  <h3 style={{ margin: 0, fontFamily: fontHeading, fontSize: '1rem', color: '#1b365d' }}>
+                    Nuova segnalazione reparto
                   </h3>
                   <button
                     type="button"
                     onClick={() => setShowQualitaForm(false)}
-                    style={{ background: 'transparent', border: 'none', fontSize: '1rem', cursor: 'pointer' }}
+                    style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}
                   >
                     ✕
                   </button>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '8px' }}>
                   <select
                     value={qualitaForm.reparto}
                     onChange={(e) => setQualitaForm((prev) => ({ ...prev, reparto: e.target.value }))}
-                    style={{ padding: '10px 12px', borderRadius: '10px', border: '1px solid #cbd5e1', fontFamily: fontBody }}
+                    style={{ padding: '9px 11px', borderRadius: '10px', border: '1px solid #cbd5e1' }}
                   >
                     {REPARTI_AZIENDA.map((rep) => (
                       <option key={rep} value={rep}>
@@ -3287,11 +2892,10 @@ export default function App() {
                       </option>
                     ))}
                   </select>
-
                   <select
                     value={qualitaForm.tipo}
                     onChange={(e) => setQualitaForm((prev) => ({ ...prev, tipo: e.target.value }))}
-                    style={{ padding: '10px 12px', borderRadius: '10px', border: '1px solid #cbd5e1', fontFamily: fontBody }}
+                    style={{ padding: '9px 11px', borderRadius: '10px', border: '1px solid #cbd5e1' }}
                   >
                     {TIPI_SEGNALAZIONE_QUALITA.map((t) => (
                       <option key={t} value={t}>
@@ -3303,32 +2907,31 @@ export default function App() {
 
                 <input
                   type="text"
-                  placeholder="Titolo sintetico (es. Bava su bordo stampaggio, Perdita aria linea 2...)"
+                  placeholder="Titolo segnalazione..."
                   value={qualitaForm.titolo}
                   onChange={(e) => setQualitaForm((prev) => ({ ...prev, titolo: e.target.value }))}
                   required
-                  style={{ padding: '10px 12px', borderRadius: '10px', border: '1px solid #cbd5e1', fontFamily: fontBody }}
+                  style={{ padding: '9px 11px', borderRadius: '10px', border: '1px solid #cbd5e1' }}
                 />
 
                 <textarea
                   rows={2}
-                  placeholder="Descrivi dove si ripete il problema o come migliorare la qualità/sicurezza..."
+                  placeholder="Dettagli del difetto o miglioramento..."
                   value={qualitaForm.descrizione}
                   onChange={(e) => setQualitaForm((prev) => ({ ...prev, descrizione: e.target.value }))}
                   required
-                  style={{ padding: '10px 12px', borderRadius: '10px', border: '1px solid #cbd5e1', fontFamily: fontBody }}
+                  style={{ padding: '9px 11px', borderRadius: '10px', border: '1px solid #cbd5e1' }}
                 />
 
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
-                  <label style={{ fontSize: '0.82rem', fontWeight: 700, color: '#2563eb', cursor: 'pointer' }}>
-                    📷 {qualitaForm.foto ? 'Foto allegata ✓ (cambia)' : 'Allega foto (opzionale)'}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                  <label style={{ fontSize: '0.8rem', fontWeight: 700, color: '#2563eb', cursor: 'pointer' }}>
+                    📷 {qualitaForm.foto ? 'Foto allegata ✓' : 'Allega foto'}
                     <input type="file" accept="image/*" onChange={handleFotoQualitaChange} style={{ display: 'none' }} />
                   </label>
-
                   <button
                     type="submit"
                     style={{
-                      padding: '10px 18px',
+                      padding: '9px 16px',
                       borderRadius: '10px',
                       border: 'none',
                       background: '#2563eb',
@@ -3338,190 +2941,119 @@ export default function App() {
                       cursor: 'pointer',
                     }}
                   >
-                    Invia segnalazione
+                    Invia
                   </button>
                 </div>
               </form>
             )}
 
-            <div>
-              <h2 style={{ margin: '0 0 10px', fontFamily: fontHeading, fontSize: '1.08rem', color: '#1b365d' }}>
-                🏭 Stato Sicurezza & Qualità per Reparto
-              </h2>
-              <div className="tm-rep-grid">
-                {riepilogoAziendaleQualita.repList
-                  .filter((r) => filtroRepartoQualita === 'Tutti' || r.reparto === filtroRepartoQualita)
-                  .map((rep) => {
-                    const qNum = Number(rep.livelloQualita) || 0;
-                    const coloreQualita = qNum >= 99 ? '#047857' : qNum >= 97.5 ? '#1d4ed8' : '#d97706';
-                    return (
-                      <article
-                        key={rep.reparto}
+            <div className="tm-rep-grid">
+              {riepilogoAziendaleQualita.repList
+                .filter((r) => filtroRepartoQualita === 'Tutti' || r.reparto === filtroRepartoQualita)
+                .map((rep) => (
+                  <article
+                    key={rep.reparto}
+                    style={{
+                      background: '#ffffff',
+                      borderRadius: '14px',
+                      padding: '14px',
+                      border: '1px solid #e2e8f0',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '10px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+                      <h3 style={{ margin: 0, fontFamily: fontHeading, fontSize: '0.94rem', color: '#0f172a' }}>
+                        {rep.reparto}
+                      </h3>
+                      <button
+                        type="button"
+                        onClick={() => apriModificaKpiReparto(rep.reparto)}
                         style={{
-                          background: '#fff',
-                          borderRadius: '16px',
-                          padding: '14px 16px',
-                          border: '1px solid #e2e8f0',
-                          boxShadow: '0 2px 10px rgba(15,23,42,0.04)',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: '10px',
+                          background: '#f1f5f9',
+                          border: '1px solid #cbd5e1',
+                          borderRadius: '8px',
+                          padding: '3px 8px',
+                          fontSize: '0.7rem',
+                          fontWeight: 700,
+                          cursor: 'pointer',
                         }}
                       >
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
-                          <h3 style={{ margin: 0, fontFamily: fontHeading, fontSize: '0.96rem', color: '#0f172a' }}>
-                            {rep.reparto}
-                          </h3>
-                          <button
-                            type="button"
-                            onClick={() => apriModificaKpiReparto(rep.reparto)}
-                            style={{
-                              background: '#f1f5f9',
-                              border: '1px solid #cbd5e1',
-                              borderRadius: '8px',
-                              padding: '3px 8px',
-                              fontSize: '0.72rem',
-                              fontWeight: 700,
-                              color: '#334155',
-                              cursor: 'pointer',
-                            }}
-                          >
-                            Aggiorna KPI
-                          </button>
-                        </div>
+                        KPI
+                      </button>
+                    </div>
 
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '0.8rem' }}>
-                          <div style={{ background: '#f8fafc', padding: '8px 10px', borderRadius: '10px' }}>
-                            <div style={{ color: '#64748b', fontSize: '0.7rem', fontWeight: 700 }}>SENZA INFORTUNI</div>
-                            <div style={{ fontWeight: 800, color: '#1b365d', fontSize: '0.96rem' }}>
-                              {rep.giorniSenzaInfortuni} gg
-                            </div>
-                          </div>
-                          <div style={{ background: '#f8fafc', padding: '8px 10px', borderRadius: '10px' }}>
-                            <div style={{ color: '#64748b', fontSize: '0.7rem', fontWeight: 700 }}>LIVELLO QUALITÀ</div>
-                            <div style={{ fontWeight: 800, color: coloreQualita, fontSize: '0.96rem' }}>
-                              {qNum.toFixed(1)}%
-                            </div>
-                          </div>
-                        </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '0.8rem' }}>
+                      <div style={{ background: '#f8fafc', padding: '8px', borderRadius: '10px' }}>
+                        <div style={{ color: '#64748b', fontSize: '0.68rem', fontWeight: 700 }}>SENZA INFORTUNI</div>
+                        <div style={{ fontWeight: 800, color: '#1b365d' }}>{rep.giorniSenzaInfortuni} gg</div>
+                      </div>
+                      <div style={{ background: '#f8fafc', padding: '8px', borderRadius: '10px' }}>
+                        <div style={{ color: '#64748b', fontSize: '0.68rem', fontWeight: 700 }}>QUALITÀ</div>
+                        <div style={{ fontWeight: 800, color: '#047857' }}>{Number(rep.livelloQualita).toFixed(1)}%</div>
+                      </div>
+                    </div>
 
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.78rem', color: '#475569' }}>
-                          <span>
-                            Difetti aperti: <strong>{rep.difettiAperti}</strong> • Infortuni: <strong>{rep.infortuniAnno}</strong>
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => incrementaGiornoSicurezzaReparto(rep.reparto)}
-                            style={{
-                              background: '#ecfdf5',
-                              border: '1px solid #a7f3d0',
-                              color: '#047857',
-                              borderRadius: '8px',
-                              padding: '4px 8px',
-                              fontSize: '0.72rem',
-                              fontWeight: 800,
-                              cursor: 'pointer',
-                            }}
-                          >
-                            +1 gg sicuro
-                          </button>
-                        </div>
-                      </article>
-                    );
-                  })}
-              </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.76rem', color: '#475569' }}>
+                      <span>Difetti aperti: <strong>{rep.difettiAperti}</strong></span>
+                      <button
+                        type="button"
+                        onClick={() => incrementaGiornoSicurezzaReparto(rep.reparto)}
+                        style={{
+                          background: '#ecfdf5',
+                          border: '1px solid #a7f3d0',
+                          color: '#047857',
+                          borderRadius: '8px',
+                          padding: '3px 8px',
+                          fontSize: '0.7rem',
+                          fontWeight: 800,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        +1 gg
+                      </button>
+                    </div>
+                  </article>
+                ))}
             </div>
 
-            <div
-              style={{
-                background: '#fff',
-                borderRadius: '18px',
-                padding: '16px',
-                border: '1px solid #e2e8f0',
-              }}
-            >
-              <h3 style={{ margin: '0 0 12px', fontFamily: fontHeading, fontSize: '1.02rem', color: '#1b365d' }}>
-                🛠️ Registro Difetti Ripetitivi, Qualità & Sicurezza ({segnalazioniQualitaFiltrate.length})
+            <div style={{ background: '#ffffff', borderRadius: '16px', padding: '16px', border: '1px solid #e2e8f0' }}>
+              <h3 style={{ margin: '0 0 10px', fontFamily: fontHeading, fontSize: '1rem', color: '#1b365d' }}>
+                Segnalazioni ({segnalazioniQualitaFiltrate.length})
               </h3>
-
               {segnalazioniQualitaFiltrate.length === 0 ? (
-                <p style={{ margin: 0, fontSize: '0.86rem', color: '#64748b' }}>
-                  Nessuna segnalazione registrata per questo filtro. Premi <strong>+ Segnala difetto / qualità</strong> per
-                  aprire la prima scheda di miglioramento.
+                <p style={{ margin: 0, fontSize: '0.84rem', color: '#64748b' }}>
+                  Nessuna segnalazione per il filtro selezionato.
                 </p>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   {segnalazioniQualitaFiltrate.map((s) => (
                     <div
                       key={s.id}
                       style={{
-                        border: '1px solid #e2e8f0',
                         background: '#f8fafc',
+                        border: '1px solid #e2e8f0',
                         borderRadius: '12px',
-                        padding: '12px 14px',
+                        padding: '10px 12px',
                         display: 'flex',
                         justifyContent: 'space-between',
-                        alignItems: 'flex-start',
-                        gap: '12px',
+                        alignItems: 'center',
+                        gap: '10px',
                         flexWrap: 'wrap',
                       }}
                     >
-                      <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', flex: '1 1 280px' }}>
-                        {s.immagine && (
-                          <img
-                            src={s.immagine}
-                            alt={s.titolo}
-                            style={{ width: '56px', height: '56px', borderRadius: '8px', objectFit: 'cover', flexShrink: 0 }}
-                          />
-                        )}
-                        <div>
-                          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '4px' }}>
-                            <span
-                              style={{
-                                fontSize: '0.7rem',
-                                fontWeight: 800,
-                                background: '#dbeafe',
-                                color: '#1e40af',
-                                padding: '2px 8px',
-                                borderRadius: '999px',
-                              }}
-                            >
-                              {s.reparto}
-                            </span>
-                            <span
-                              style={{
-                                fontSize: '0.7rem',
-                                fontWeight: 800,
-                                background: s.tipo === 'Difetto ripetitivo' ? '#fef3c7' : '#e0e7ff',
-                                color: s.tipo === 'Difetto ripetitivo' ? '#92400e' : '#3730a3',
-                                padding: '2px 8px',
-                                borderRadius: '999px',
-                              }}
-                            >
-                              {s.tipo}
-                            </span>
-                          </div>
-                          <div style={{ fontWeight: 700, fontSize: '0.94rem', color: '#0f172a' }}>{s.titolo}</div>
-                          <div style={{ fontSize: '0.84rem', color: '#475569', marginTop: '2px' }}>{s.descrizione}</div>
-                          <div style={{ fontSize: '0.74rem', color: '#64748b', marginTop: '4px' }}>
-                            Segnalato da {s.autore || 'Collega'}
-                          </div>
+                      <div>
+                        <div style={{ fontSize: '0.7rem', fontWeight: 700, color: '#2563eb' }}>
+                          {s.reparto} • {s.tipo}
                         </div>
+                        <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>{s.titolo}</div>
+                        <div style={{ fontSize: '0.82rem', color: '#475569' }}>{s.descrizione}</div>
                       </div>
-
                       <select
                         value={s.stato || 'Da verificare'}
                         onChange={(e) => cambiaStatoSegnalazione(s, e.target.value)}
-                        style={{
-                          padding: '6px 10px',
-                          borderRadius: '9px',
-                          border: '1px solid #cbd5e1',
-                          background: '#fff',
-                          fontWeight: 700,
-                          fontSize: '0.78rem',
-                          color: s.stato === 'Risolto' ? '#047857' : '#1b365d',
-                          cursor: 'pointer',
-                        }}
+                        style={{ padding: '6px 8px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.76rem', fontWeight: 700 }}
                       >
                         {STATI_SEGNALAZIONE.map((st) => (
                           <option key={st} value={st}>
@@ -3537,69 +3069,26 @@ export default function App() {
           </section>
         )}
 
+        {/* SEZIONE PAUSA GIOCO */}
         {sezioneAttiva === 'gioco' && (
-          <section style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+          <section style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             <div className="tm-game-layout">
-              <div
-                style={{
-                  background: '#fff',
-                  borderRadius: '18px',
-                  padding: '18px',
-                  boxShadow: '0 4px 16px rgba(15, 23, 42, 0.06)',
-                  border: '1px solid #e2e8f0',
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                  <div>
-                    <h2 style={{ margin: 0, fontFamily: fontHeading, fontSize: '1.14rem', color: '#1b365d' }}>
-                      Colpo d’Occhio Pausa
-                    </h2>
-                    <span style={{ fontSize: '0.78rem', color: '#64748b' }}>
-                      3 colpi di fila = +5 bonus combo!
-                    </span>
-                  </div>
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <span
-                      style={{
-                        background: tempoRimasto <= 5 && giocoAttivo ? '#fee2e2' : '#eff6ff',
-                        color: tempoRimasto <= 5 && giocoAttivo ? '#dc2626' : '#1d4ed8',
-                        fontFamily: fontHeading,
-                        fontWeight: 800,
-                        padding: '6px 11px',
-                        borderRadius: '10px',
-                        fontSize: '0.88rem',
-                      }}
-                    >
+              <div style={{ background: '#ffffff', borderRadius: '16px', padding: '16px', border: '1px solid #e2e8f0' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                  <h2 style={{ margin: 0, fontFamily: fontHeading, fontSize: '1.08rem', color: '#1b365d' }}>
+                    Colpo d’Occhio Pausa
+                  </h2>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <span style={{ background: '#eff6ff', color: '#1d4ed8', fontWeight: 800, padding: '5px 10px', borderRadius: '9px', fontSize: '0.82rem' }}>
                       ⏱️ {tempoRimasto}s
                     </span>
-                    <span
-                      style={{
-                        background: '#ecfdf5',
-                        color: '#047857',
-                        fontFamily: fontHeading,
-                        fontWeight: 800,
-                        padding: '6px 11px',
-                        borderRadius: '10px',
-                        fontSize: '0.88rem',
-                      }}
-                    >
-                      🏆 {punteggioGioco} pt
+                    <span style={{ background: '#ecfdf5', color: '#047857', fontWeight: 800, padding: '5px 10px', borderRadius: '9px', fontSize: '0.82rem' }}>
+                      🏆 {punteggioGioco}
                     </span>
                   </div>
                 </div>
 
-                <div
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(3, 1fr)',
-                    gap: '10px',
-                    background: '#f8fafc',
-                    padding: '12px',
-                    borderRadius: '14px',
-                    border: '1px solid #e2e8f0',
-                    marginBottom: '12px',
-                  }}
-                >
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', background: '#f8fafc', padding: '10px', borderRadius: '12px', marginBottom: '10px' }}>
                   {[0, 1, 2, 3, 4, 5, 6, 7, 8].map((idx) => {
                     const hasTarget = giocoAttivo && cellaBersaglio.index === idx;
                     const isDanger = hasTarget && cellaBersaglio.item.punti < 0;
@@ -3610,57 +3099,35 @@ export default function App() {
                         onClick={() => toccaCellaGioco(idx)}
                         disabled={!giocoAttivo}
                         style={{
-                          height: '78px',
-                          borderRadius: '14px',
-                          border: hasTarget
-                            ? isDanger
-                              ? '2px solid #ef4444'
-                              : '2px solid #2563eb'
-                            : '1px solid #cbd5e1',
-                          background: hasTarget
-                            ? isDanger
-                              ? '#fef2f2'
-                              : '#eff6ff'
-                            : '#ffffff',
-                          fontSize: '2rem',
+                          height: '72px',
+                          borderRadius: '12px',
+                          border: hasTarget ? (isDanger ? '2px solid #ef4444' : '2px solid #2563eb') : '1px solid #cbd5e1',
+                          background: hasTarget ? (isDanger ? '#fef2f2' : '#eff6ff') : '#ffffff',
+                          fontSize: '1.8rem',
                           cursor: giocoAttivo ? 'pointer' : 'default',
                           display: 'flex',
                           flexDirection: 'column',
                           alignItems: 'center',
                           justifyContent: 'center',
-                          boxShadow: hasTarget ? '0 4px 12px rgba(37, 99, 235, 0.18)' : 'none',
-                          transition: 'transform 0.08s ease',
                         }}
                       >
                         {hasTarget ? (
                           <>
                             <span>{cellaBersaglio.item.emoji}</span>
-                            <span
-                              style={{
-                                fontSize: '0.66rem',
-                                fontWeight: 800,
-                                color: isDanger ? '#dc2626' : '#1d4ed8',
-                              }}
-                            >
-                              {cellaBersaglio.item.punti > 0
-                                ? `+${cellaBersaglio.item.punti}`
-                                : cellaBersaglio.item.punti}
+                            <span style={{ fontSize: '0.64rem', fontWeight: 800, color: isDanger ? '#dc2626' : '#1d4ed8' }}>
+                              {cellaBersaglio.item.punti > 0 ? `+${cellaBersaglio.item.punti}` : cellaBersaglio.item.punti}
                             </span>
                           </>
                         ) : (
-                          <span style={{ color: '#cbd5e1', fontSize: '1rem' }}>•</span>
+                          <span style={{ color: '#cbd5e1', fontSize: '0.9rem' }}>•</span>
                         )}
                       </button>
                     );
                   })}
                 </div>
 
-                <div style={{ minHeight: '22px', textAlign: 'center', fontSize: '0.84rem', fontWeight: 700, color: '#2563eb', marginBottom: '10px' }}>
-                  {giocoAttivo
-                    ? feedbackColpo || 'Tocca al volo le icone positive!'
-                    : giocoFinito
-                    ? `Partita terminata! Hai totalizzato ${punteggioGioco} punti!`
-                    : 'Pronto per una sfida veloce da 20 secondi?'}
+                <div style={{ minHeight: '20px', textAlign: 'center', fontSize: '0.82rem', fontWeight: 700, color: '#2563eb', marginBottom: '10px' }}>
+                  {giocoAttivo ? feedbackColpo || 'Tocca le icone positive!' : giocoFinito ? `Finito! ${punteggioGioco} punti` : 'Sfida lampo da 20 secondi'}
                 </div>
 
                 <button
@@ -3668,111 +3135,74 @@ export default function App() {
                   onClick={avviaPartitaGioco}
                   style={{
                     width: '100%',
-                    padding: '12px',
+                    padding: '11px',
                     borderRadius: '12px',
                     border: 'none',
-                    background: giocoAttivo ? '#64748b' : 'linear-gradient(135deg, #1b365d 0%, #2563eb 100%)',
-                    color: '#fff',
+                    background: giocoAttivo ? '#64748b' : '#2563eb',
+                    color: '#ffffff',
                     fontFamily: fontHeading,
                     fontWeight: 800,
-                    fontSize: '0.96rem',
                     cursor: 'pointer',
                   }}
                 >
-                  {giocoAttivo ? 'Partita in corso...' : giocoFinito ? '🔄 Gioca ancora' : '▶️ Inizia sfida (20s)'}
+                  {giocoAttivo ? 'In corso...' : giocoFinito ? '🔄 Gioca ancora' : '▶️ Inizia (20s)'}
                 </button>
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                <div
-                  style={{
-                    background: '#fff',
-                    borderRadius: '18px',
-                    padding: '16px',
-                    boxShadow: '0 4px 16px rgba(15, 23, 42, 0.05)',
-                    border: '1px solid #e2e8f0',
-                  }}
-                >
-                  <h3 style={{ margin: '0 0 10px', fontFamily: fontHeading, fontSize: '1.02rem', color: '#1b365d' }}>
-                    🏢 Classifica Reparti (Punti cumulativi)
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div style={{ background: '#ffffff', borderRadius: '16px', padding: '15px', border: '1px solid #e2e8f0' }}>
+                  <h3 style={{ margin: '0 0 8px', fontFamily: fontHeading, fontSize: '0.98rem', color: '#1b365d' }}>
+                    Classifica Reparti
                   </h3>
                   {classificaReparti.length === 0 ? (
-                    <p style={{ margin: 0, fontSize: '0.84rem', color: '#64748b' }}>
-                      Nessun punteggio registrato ancora. Gioca la prima partita per portare in testa il tuo reparto!
-                    </p>
+                    <p style={{ margin: 0, fontSize: '0.82rem', color: '#64748b' }}>Nessun punteggio ancora.</p>
                   ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '7px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                       {classificaReparti.map((r, i) => (
                         <div
                           key={r.reparto}
                           style={{
                             display: 'flex',
                             justifyContent: 'space-between',
-                            alignItems: 'center',
-                            padding: '8px 11px',
-                            borderRadius: '10px',
+                            padding: '7px 10px',
+                            borderRadius: '9px',
                             background: i === 0 ? '#fef3c7' : '#f8fafc',
-                            border: i === 0 ? '1px solid #fde68a' : '1px solid #e2e8f0',
-                            fontSize: '0.84rem',
+                            fontSize: '0.82rem',
+                            fontWeight: 700,
                           }}
                         >
-                          <span style={{ fontWeight: 700, color: '#0f172a' }}>
-                            {i === 0 ? '🥇 ' : i === 1 ? '🥈 ' : i === 2 ? '🥉 ' : `${i + 1}. `}
-                            {r.reparto}
-                          </span>
-                          <span style={{ fontWeight: 800, color: '#1b365d' }}>{r.totale} pt</span>
+                          <span>{i + 1}. {r.reparto}</span>
+                          <span>{r.totale} pt</span>
                         </div>
                       ))}
                     </div>
                   )}
                 </div>
 
-                <div
-                  style={{
-                    background: '#fff',
-                    borderRadius: '18px',
-                    padding: '16px',
-                    boxShadow: '0 4px 16px rgba(15, 23, 42, 0.05)',
-                    border: '1px solid #e2e8f0',
-                  }}
-                >
-                  <h3 style={{ margin: '0 0 10px', fontFamily: fontHeading, fontSize: '1.02rem', color: '#1b365d' }}>
-                    🏆 Record Individuale Colleghi
+                <div style={{ background: '#ffffff', borderRadius: '16px', padding: '15px', border: '1px solid #e2e8f0' }}>
+                  <h3 style={{ margin: '0 0 8px', fontFamily: fontHeading, fontSize: '0.98rem', color: '#1b365d' }}>
+                    Record Colleghi
                   </h3>
                   {classificaIndividualeTop.length === 0 ? (
-                    <p style={{ margin: 0, fontSize: '0.84rem', color: '#64748b' }}>
-                      Nessun record personale ancora. Fai il primo punteggio!
-                    </p>
+                    <p style={{ margin: 0, fontSize: '0.82rem', color: '#64748b' }}>Nessun record personale ancora.</p>
                   ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '7px' }}>
-                      {classificaIndividualeTop.map((row, idx) => {
-                        const st = getStatsUtente(row.giocatore);
-                        return (
-                          <div
-                            key={`${row.giocatore}-${idx}`}
-                            style={{
-                              display: 'flex',
-                              justifyContent: 'space-between',
-                              alignItems: 'center',
-                              gap: '8px',
-                              padding: '8px 11px',
-                              borderRadius: '10px',
-                              background: '#f8fafc',
-                              border: '1px solid #e2e8f0',
-                              fontSize: '0.83rem',
-                            }}
-                          >
-                            <div>
-                              <div style={{ fontWeight: 700, color: '#0f172a' }}>
-                                #{idx + 1} {row.giocatore}{' '}
-                                <span style={{ color: '#64748b', fontWeight: 500 }}>({row.reparto})</span>
-                              </div>
-                              <div>{renderStarsInline(st.media, st.totale)}</div>
-                            </div>
-                            <span style={{ fontWeight: 800, color: '#2563eb' }}>{row.punteggio} pt</span>
-                          </div>
-                        );
-                      })}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      {classificaIndividualeTop.map((row, idx) => (
+                        <div
+                          key={`${row.giocatore}-${idx}`}
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            padding: '7px 10px',
+                            borderRadius: '9px',
+                            background: '#f8fafc',
+                            fontSize: '0.82rem',
+                          }}
+                        >
+                          <strong>#{idx + 1} {row.giocatore}</strong>
+                          <span style={{ fontWeight: 800, color: '#2563eb' }}>{row.punteggio} pt</span>
+                        </div>
+                      ))}
                     </div>
                   )}
                 </div>
@@ -3780,59 +3210,29 @@ export default function App() {
             </div>
 
             {ultimiAnnunciPerVetrinaGioco.length > 0 && (
-              <div
-                style={{
-                  background: '#fff',
-                  borderRadius: '18px',
-                  padding: '16px',
-                  border: '1px solid #e2e8f0',
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                  <h3 style={{ margin: 0, fontFamily: fontHeading, fontSize: '1rem', color: '#1b365d' }}>
-                    🛍️ Ultime occasioni in Bacheca Colleghi
-                  </h3>
-                  <button
-                    type="button"
-                    onClick={() => setSezioneAttiva('bacheca')}
-                    style={{
-                      background: 'transparent',
-                      border: 'none',
-                      color: '#2563eb',
-                      fontWeight: 700,
-                      fontSize: '0.82rem',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Vedi tutta la bacheca →
-                  </button>
-                </div>
-                <div className="tm-cards-grid">
-                  {ultimiAnnunciPerVetrinaGioco.map((item) => renderCardAnnuncio(item, false))}
+              <div>
+                <h3 style={{ margin: '0 0 10px', fontFamily: fontHeading, fontSize: '0.98rem', color: '#1b365d' }}>
+                  Ultime occasioni in bacheca
+                </h3>
+                <div className="tm-grid-v">
+                  {ultimiAnnunciPerVetrinaGioco.map((item) => renderCardCatalogo(item, false))}
                 </div>
               </div>
             )}
           </section>
         )}
 
+        {/* SEZIONE CHAT */}
         {sezioneAttiva === 'chat' && (
-          <section
-            style={{
-              background: '#fff',
-              borderRadius: '18px',
-              padding: '18px',
-              border: '1px solid #e2e8f0',
-              boxShadow: '0 2px 12px rgba(15, 23, 42, 0.05)',
-            }}
-          >
-            <h2 style={{ margin: '0 0 12px', fontFamily: fontHeading, fontSize: '1.12rem', color: '#1b365d' }}>
-              💬 Le tue chat private con i colleghi
+          <section style={{ background: '#ffffff', borderRadius: '16px', padding: '16px', border: '1px solid #e2e8f0' }}>
+            <h2 style={{ margin: '0 0 12px', fontFamily: fontHeading, fontSize: '1.08rem', color: '#1b365d' }}>
+              Chat private colleghi
             </h2>
 
             {!userProfile.registrato || !userProfile.nome.trim() ? (
-              <div style={{ textAlign: 'center', padding: '24px', color: '#64748b' }}>
-                <p style={{ margin: '0 0 12px' }}>
-                  Accedi con il tuo profilo Badge / Email aziendale per leggere e inviare messaggi privati.
+              <div style={{ textAlign: 'center', padding: '20px', color: '#64748b' }}>
+                <p style={{ margin: '0 0 12px', fontSize: '0.88rem' }}>
+                  Accedi con Badge o Email aziendale per leggere e inviare messaggi.
                 </p>
                 <button
                   type="button"
@@ -3842,7 +3242,7 @@ export default function App() {
                     color: '#fff',
                     border: 'none',
                     borderRadius: '10px',
-                    padding: '10px 16px',
+                    padding: '9px 16px',
                     fontWeight: 700,
                     cursor: 'pointer',
                   }}
@@ -3851,86 +3251,192 @@ export default function App() {
                 </button>
               </div>
             ) : conversazioniAttive.length === 0 ? (
-              <p style={{ margin: 0, color: '#64748b', fontSize: '0.88rem' }}>
-                Non hai ancora conversazioni attive. Apri un annuncio o una richiesta in <strong>Bacheca</strong> o{' '}
-                <strong>Cerco / Aiuto</strong> e premi <strong>Chatta</strong> / <strong>Rispondi</strong>.
+              <p style={{ margin: 0, color: '#64748b', fontSize: '0.86rem' }}>
+                Nessuna chat attiva. Apri una card in Bacheca o Aiuto per iniziare una conversazione.
               </p>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {conversazioniAttive.map((conv) => {
-                  const stAltro = getStatsUtente(conv.altroUtente);
-                  return (
-                    <div
-                      key={conv.key}
-                      onClick={() => apriChatPrivata(conv.annuncio, conv.altroUtente)}
-                      style={{
-                        border: '1px solid #e2e8f0',
-                        borderRadius: '12px',
-                        padding: '12px 14px',
-                        background: '#f8fafc',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        gap: '12px',
-                      }}
-                    >
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                          <strong style={{ fontFamily: fontHeading, color: '#0f172a', fontSize: '0.95rem' }}>
-                            {conv.altroUtente}
-                          </strong>
-                          {renderStarsInline(stAltro.media, stAltro.totale)}
-                        </div>
-                        <div style={{ fontSize: '0.78rem', color: '#2563eb', fontWeight: 700, marginTop: '2px' }}>
-                          Oggetto: {conv.annuncio?.titolo || 'Annuncio'}
-                        </div>
-                        <div
-                          style={{
-                            fontSize: '0.85rem',
-                            color: '#475569',
-                            marginTop: '4px',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
-                          }}
-                        >
-                          {conv.ultimoTesto}
-                        </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {conversazioniAttive.map((conv) => (
+                  <div
+                    key={conv.key}
+                    onClick={() => apriChatPrivata(conv.annuncio, conv.altroUtente)}
+                    style={{
+                      border: '1px solid #e2e8f0',
+                      borderRadius: '12px',
+                      padding: '12px',
+                      background: '#f8fafc',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      gap: '10px',
+                    }}
+                  >
+                    <div style={{ minWidth: 0 }}>
+                      <strong style={{ fontFamily: fontHeading, fontSize: '0.92rem' }}>{conv.altroUtente}</strong>
+                      <div style={{ fontSize: '0.74rem', color: '#2563eb', fontWeight: 700 }}>
+                        {conv.annuncio?.titolo || 'Annuncio'}
                       </div>
-                      <span
-                        style={{
-                          background: '#1b365d',
-                          color: '#fff',
-                          borderRadius: '9px',
-                          padding: '6px 12px',
-                          fontSize: '0.78rem',
-                          fontWeight: 700,
-                          flexShrink: 0,
-                        }}
-                      >
-                        Apri chat
-                      </span>
+                      <div style={{ fontSize: '0.82rem', color: '#475569', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {conv.ultimoTesto}
+                      </div>
                     </div>
-                  );
-                })}
+                    <span style={{ background: '#1b365d', color: '#fff', borderRadius: '8px', padding: '6px 11px', fontSize: '0.76rem', fontWeight: 700, flexShrink: 0 }}>
+                      Apri
+                    </span>
+                  </div>
+                ))}
               </div>
             )}
           </section>
         )}
       </main>
 
-      <button
-        type="button"
-        className="tm-fab-publish"
-        onClick={() => apriModalePubblica(sezioneAttiva)}
-      >
-        {sezioneAttiva === 'qualita'
-          ? '📋 Segnala Qualità'
-          : sezioneAttiva === 'cerco_aiuto'
-          ? '🤝 Chiedi / Pubblica'
-          : '➕ Pubblica'}
-      </button>
+      {/* BARRA DI NAVIGAZIONE INFERIORE FISSA */}
+      <nav className="tm-bottom-nav" aria-label="Navigazione principale">
+        <button
+          type="button"
+          className={`tm-bottom-btn ${sezioneAttiva === 'bacheca' ? 'is-active' : ''}`}
+          onClick={() => {
+            setShowMoreMenu(false);
+            setSezioneAttiva('bacheca');
+          }}
+        >
+          <span style={{ fontSize: '1.12rem' }}>🛍️</span>
+          <span>Bacheca</span>
+        </button>
+
+        <button
+          type="button"
+          className={`tm-bottom-btn ${sezioneAttiva === 'cerco_aiuto' ? 'is-active' : ''}`}
+          onClick={() => {
+            setShowMoreMenu(false);
+            setSezioneAttiva('cerco_aiuto');
+          }}
+        >
+          <span style={{ fontSize: '1.12rem' }}>🤝</span>
+          <span>Aiuto</span>
+        </button>
+
+        <div style={{ display: 'flex', justifyContent: 'center' }}>
+          <button
+            type="button"
+            className="tm-bottom-plus"
+            aria-label="Pubblica annuncio"
+            onClick={() => apriModalePubblica(sezioneAttiva)}
+          >
+            +
+          </button>
+        </div>
+
+        <button
+          type="button"
+          className={`tm-bottom-btn ${sezioneAttiva === 'chat' ? 'is-active' : ''}`}
+          onClick={() => {
+            setShowMoreMenu(false);
+            setSezioneAttiva('chat');
+            setSettings((prev) => ({ ...prev, badgeNonLetti: 0 }));
+            fetchMessaggi();
+          }}
+        >
+          <span style={{ fontSize: '1.12rem' }}>💬</span>
+          <span>Chat</span>
+          {settings.badgeNonLetti > 0 && (
+            <span
+              style={{
+                position: 'absolute',
+                top: '2px',
+                right: '16px',
+                background: '#ef4444',
+                color: '#fff',
+                fontSize: '0.62rem',
+                fontWeight: 800,
+                padding: '1px 5px',
+                borderRadius: '999px',
+              }}
+            >
+              {settings.badgeNonLetti}
+            </span>
+          )}
+        </button>
+
+        <button
+          type="button"
+          className={`tm-bottom-btn ${showMoreMenu || Boolean(sezioneExtraAttiva) ? 'is-active' : ''}`}
+          onClick={() => setShowMoreMenu((prev) => !prev)}
+        >
+          <span style={{ fontSize: '1.12rem' }}>☰</span>
+          <span>{sezioneExtraAttiva ? sezioneExtraAttiva.label.split(' ')[0] : 'Altro'}</span>
+        </button>
+      </nav>
+
+      {/* MENU RAPIDO A COMPARSA (CONVENZIONI, REPARTI & QUALITÀ, PAUSA GIOCO) */}
+      {showMoreMenu && (
+        <div className="tm-more-backdrop" onClick={() => setShowMoreMenu(false)}>
+          <div className="tm-more-sheet" onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+              <div>
+                <div style={{ fontFamily: fontHeading, fontWeight: 800, fontSize: '1.04rem', color: '#0f172a' }}>
+                  Altre sezioni TRACOLLEGHI
+                </div>
+                <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                  Scegli dove andare in un tocco
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowMoreMenu(false)}
+                style={{
+                  background: '#f1f5f9',
+                  border: 'none',
+                  borderRadius: '50%',
+                  width: '30px',
+                  height: '30px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  color: '#334155',
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {SEZIONI_EXTRA.map((sez) => {
+                const attiva = sezioneAttiva === sez.id;
+                return (
+                  <button
+                    key={sez.id}
+                    type="button"
+                    className={`tm-more-item ${attiva ? 'is-selected' : ''}`}
+                    onClick={() => {
+                      setSezioneAttiva(sez.id);
+                      setShowMoreMenu(false);
+                      if (sez.id === 'gioco') fetchClassificaGioco();
+                      if (sez.id === 'qualita') fetchSegnalazioniQualita();
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
+                      <span className="tm-more-icon">{sez.icon}</span>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontWeight: 800, fontSize: '0.92rem', color: '#0f172a' }}>
+                          {sez.label}
+                        </div>
+                        <div style={{ fontSize: '0.75rem', color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {sez.desc}
+                        </div>
+                      </div>
+                    </div>
+                    <span style={{ color: attiva ? '#2563eb' : '#94a3b8', fontWeight: 800, fontSize: '1rem' }}>
+                      {attiva ? '✓' : '›'}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* MODALE SCHEDA DETTAGLIO ANNUNCIO / RICHIESTA */}
       {schedaAnnuncio && (() => {
@@ -3964,182 +3470,83 @@ export default function App() {
               style={{
                 background: '#fff',
                 borderRadius: '20px',
-                padding: '22px',
+                padding: '20px',
                 width: '100%',
-                maxWidth: '540px',
+                maxWidth: '520px',
                 maxHeight: '90vh',
                 overflowY: 'auto',
-                boxShadow: '0 20px 50px rgba(0, 0, 0, 0.25)',
               }}
             >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
-                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
-                  <span
-                    style={{
-                      fontFamily: fontHeading,
-                      fontSize: '0.74rem',
-                      fontWeight: 700,
-                      background: '#eff6ff',
-                      color: '#1d4ed8',
-                      padding: '3px 10px',
-                      borderRadius: '999px',
-                    }}
-                  >
-                    {isCercoAiutoCard ? item.tipo || 'Cerco / Aiuto' : item.categoria || 'Generale'}
-                  </span>
-                  {venduto && (
-                    <span
-                      style={{
-                        fontFamily: fontHeading,
-                        fontSize: '0.74rem',
-                        fontWeight: 800,
-                        background: '#fee2e2',
-                        color: '#b91c1c',
-                        padding: '3px 10px',
-                        borderRadius: '999px',
-                      }}
-                    >
-                      VENDUTO
-                    </span>
-                  )}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setSchedaAnnuncio(null)}
-                  style={{ background: 'transparent', border: 'none', fontSize: '1.2rem', cursor: 'pointer' }}
-                >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                <span style={{ fontFamily: fontHeading, fontSize: '0.72rem', fontWeight: 700, background: '#eff6ff', color: '#1d4ed8', padding: '3px 9px', borderRadius: '999px' }}>
+                  {isCercoAiutoCard ? item.tipo || 'Cerco / Aiuto' : item.categoria || 'Generale'}
+                </span>
+                <button type="button" onClick={() => setSchedaAnnuncio(null)} style={{ background: 'transparent', border: 'none', fontSize: '1.15rem', cursor: 'pointer' }}>
                   ✕
                 </button>
               </div>
 
               {foto.length > 0 && (
-                <div
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: foto.length === 1 ? '1fr' : 'repeat(2, 1fr)',
-                    gap: '8px',
-                    marginBottom: '14px',
-                  }}
-                >
+                <div style={{ display: 'grid', gridTemplateColumns: foto.length === 1 ? '1fr' : 'repeat(2, 1fr)', gap: '8px', marginBottom: '12px' }}>
                   {foto.map((src, i) => (
                     <img
                       key={i}
                       src={src}
                       alt={`${item.titolo} ${i + 1}`}
-                      style={{
-                        width: '100%',
-                        height: foto.length === 1 ? '230px' : '130px',
-                        objectFit: 'cover',
-                        borderRadius: '12px',
-                      }}
+                      style={{ width: '100%', height: foto.length === 1 ? '230px' : '125px', objectFit: 'cover', borderRadius: '12px' }}
                     />
                   ))}
                 </div>
               )}
 
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '10px', flexWrap: 'wrap' }}>
-                <h2 style={{ margin: 0, fontFamily: fontHeading, fontSize: '1.22rem', color: '#0f172a' }}>
-                  {item.titolo}
-                </h2>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '8px', flexWrap: 'wrap' }}>
+                <h2 style={{ margin: 0, fontFamily: fontHeading, fontSize: '1.18rem' }}>{item.titolo}</h2>
                 {!isCercoAiutoCard && (
-                  <span style={{ fontWeight: 800, color: '#0f766e', fontSize: '1.05rem' }}>
-                    {item.tipo === 'In regalo' || item.prezzo === 0
-                      ? 'IN REGALO'
-                      : item.prezzo != null
-                      ? `€ ${item.prezzo}${item.tipo === 'A noleggio' ? '/gg' : ''}`
-                      : item.tipo || 'In vendita'}
+                  <span style={{ fontWeight: 800, color: '#0f766e', fontSize: '1.02rem' }}>
+                    {formatPrezzoCard(item)}
                   </span>
                 )}
               </div>
 
-              <p style={{ margin: '10px 0 14px', color: '#334155', fontSize: '0.92rem', lineHeight: 1.55 }}>
+              <p style={{ margin: '10px 0 14px', color: '#334155', fontSize: '0.9rem', lineHeight: 1.5 }}>
                 {descrizionePulita}
               </p>
 
               {pagamentiItem.length > 0 && (
-                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '12px', marginBottom: '14px' }}>
-                  <div style={{ fontSize: '0.78rem', fontWeight: 800, color: '#1b365d', marginBottom: '6px' }}>
+                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '10px 12px', marginBottom: '14px' }}>
+                  <div style={{ fontSize: '0.76rem', fontWeight: 800, color: '#1b365d', marginBottom: '6px' }}>
                     Pagamenti accettati:
                   </div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                     {pagamentiItem.map((p) => (
-                      <span
-                        key={p}
-                        style={{
-                          fontSize: '0.74rem',
-                          fontWeight: 700,
-                          background: /cripto/i.test(p) ? '#fef3c7' : '#fff',
-                          color: /cripto/i.test(p) ? '#92400e' : '#334155',
-                          border: /cripto/i.test(p) ? '1px solid #fde68a' : '1px solid #cbd5e1',
-                          padding: '3px 9px',
-                          borderRadius: '999px',
-                        }}
-                      >
+                      <span key={p} style={{ fontSize: '0.72rem', fontWeight: 700, background: '#fff', border: '1px solid #cbd5e1', padding: '2px 8px', borderRadius: '999px' }}>
                         {p}
                       </span>
                     ))}
                   </div>
-                  {pagamentiItem.some((p) => /cripto/i.test(p)) && (
-                    <div style={{ fontSize: '0.74rem', color: '#64748b', marginTop: '8px' }}>
-                      ₿ Per pagamenti in criptovalute concordate sempre rete, token e indirizzo direttamente in chat.
-                    </div>
-                  )}
                 </div>
               )}
 
-              <div
-                style={{
-                  borderTop: '1px solid #e2e8f0',
-                  paddingTop: '12px',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  flexWrap: 'wrap',
-                  gap: '10px',
-                }}
-              >
+              <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
                 <div>
-                  <div style={{ fontWeight: 700, fontSize: '0.88rem', color: '#0f172a' }}>
-                    {item.autore || 'Collega'}
-                  </div>
-                  <div style={{ marginTop: '3px' }}>
-                    {renderStarsInline(statsAutore.media, statsAutore.totale)}
-                  </div>
+                  <div style={{ fontWeight: 700, fontSize: '0.88rem' }}>{item.autore || 'Collega'}</div>
+                  <div>{renderStarsInline(statsAutore.media, statsAutore.totale)}</div>
                 </div>
-
-                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', gap: '8px' }}>
                   <button
                     type="button"
                     onClick={() => togglePreferito(item.id)}
-                    style={{
-                      background: isPreferito ? '#fff1f2' : '#f8fafc',
-                      border: '1px solid #e2e8f0',
-                      borderRadius: '10px',
-                      padding: '8px 12px',
-                      fontSize: '0.82rem',
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                    }}
+                    style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '7px 11px', fontSize: '0.8rem', fontWeight: 700, cursor: 'pointer' }}
                   >
                     {isPreferito ? '❤️ Salvato' : '🤍 Preferito'}
                   </button>
-
                   {!isOwner && autorePulito && !venduto && (
                     <button
                       type="button"
                       onClick={() => apriChatPrivata(item, autorePulito)}
-                      style={{
-                        background: '#2563eb',
-                        color: '#fff',
-                        border: 'none',
-                        borderRadius: '10px',
-                        padding: '8px 14px',
-                        fontSize: '0.84rem',
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                      }}
+                      style={{ background: '#2563eb', color: '#fff', border: 'none', borderRadius: '10px', padding: '7px 14px', fontSize: '0.82rem', fontWeight: 700, cursor: 'pointer' }}
                     >
-                      {isCercoAiutoCard ? 'Rispondi in chat' : 'Chatta con il collega'}
+                      {isCercoAiutoCard ? 'Rispondi' : 'Chatta'}
                     </button>
                   )}
                 </div>
@@ -4169,119 +3576,97 @@ export default function App() {
             style={{
               background: '#fff',
               borderRadius: '20px',
-              padding: '22px',
+              padding: '20px',
               width: '100%',
-              maxWidth: '520px',
+              maxWidth: '500px',
               maxHeight: '90vh',
               overflowY: 'auto',
-              boxShadow: '0 20px 50px rgba(0, 0, 0, 0.25)',
             }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-              <h2 style={{ margin: 0, fontFamily: fontHeading, fontSize: '1.2rem' }}>
-                {isFormCercoAiuto ? 'Pubblica richiesta / avviso Cerco & Aiuto' : 'Pubblica nuovo annuncio'}
+              <h2 style={{ margin: 0, fontFamily: fontHeading, fontSize: '1.15rem' }}>
+                {isFormCercoAiuto ? 'Pubblica richiesta / avviso' : 'Nuovo annuncio'}
               </h2>
-              <button
-                type="button"
-                onClick={() => setShowPublishModal(false)}
-                style={{ background: 'transparent', border: 'none', fontSize: '1.2rem', cursor: 'pointer' }}
-              >
+              <button type="button" onClick={() => setShowPublishModal(false)} style={{ background: 'transparent', border: 'none', fontSize: '1.15rem', cursor: 'pointer' }}>
                 ✕
               </button>
             </div>
 
             {errore && (
-              <div style={{ background: '#fee2e2', color: '#991b1b', padding: '10px 12px', borderRadius: '10px', marginBottom: '12px', fontSize: '0.86rem', fontWeight: 600 }}>
+              <div style={{ background: '#fee2e2', color: '#991b1b', padding: '10px', borderRadius: '10px', marginBottom: '10px', fontSize: '0.84rem', fontWeight: 600 }}>
                 {errore}
               </div>
             )}
 
-            <form onSubmit={handleSubmitAnnuncio} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <form onSubmit={handleSubmitAnnuncio} style={{ display: 'flex', flexDirection: 'column', gap: '11px' }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, marginBottom: '4px' }}>
-                    Categoria
-                  </label>
+                  <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 700, marginBottom: '4px' }}>Categoria</label>
                   <select
                     value={categoria}
                     onChange={(e) => {
                       const val = e.target.value;
                       setCategoria(val);
-                      if (val === 'Cerco / Aiuto') {
-                        setTipoAnnuncio('Cerco / Mi serve');
-                      } else if (TIPI_CERCO_AIUTO_FORM.includes(tipoAnnuncio)) {
-                        setTipoAnnuncio('In vendita');
-                      }
+                      if (val === 'Cerco / Aiuto') setTipoAnnuncio('Cerco / Mi serve');
+                      else if (TIPI_CERCO_AIUTO_FORM.includes(tipoAnnuncio)) setTipoAnnuncio('In vendita');
                     }}
-                    style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', border: '1px solid #cbd5e1', fontFamily: fontBody }}
+                    style={{ width: '100%', padding: '9px 11px', borderRadius: '10px', border: '1px solid #cbd5e1' }}
                   >
                     {CATEGORIE_FORM.map((cat) => (
-                      <option key={cat} value={cat}>
-                        {cat}
-                      </option>
+                      <option key={cat} value={cat}>{cat}</option>
                     ))}
                     <option value="Cerco / Aiuto">Cerco / Aiuto</option>
                   </select>
                 </div>
 
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, marginBottom: '4px' }}>
+                  <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 700, marginBottom: '4px' }}>
                     {isFormCercoAiuto ? 'Tipo richiesta' : 'Tipologia'}
                   </label>
                   <select
                     value={tipoAnnuncio}
                     onChange={(e) => setTipoAnnuncio(e.target.value)}
-                    style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', border: '1px solid #cbd5e1', fontFamily: fontBody }}
+                    style={{ width: '100%', padding: '9px 11px', borderRadius: '10px', border: '1px solid #cbd5e1' }}
                   >
                     {(isFormCercoAiuto ? TIPI_CERCO_AIUTO_FORM : TIPI_FORM).map((t) => (
-                      <option key={t} value={t}>
-                        {t}
-                      </option>
+                      <option key={t} value={t}>{t}</option>
                     ))}
                   </select>
                 </div>
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, marginBottom: '4px' }}>
-                  Titolo *
-                </label>
+                <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 700, marginBottom: '4px' }}>Titolo *</label>
                 <input
                   type="text"
-                  placeholder={
-                    isFormCercoAiuto
-                      ? 'Es. Cerco passaggio turno mattina o chiave dinamometrica...'
-                      : 'Es. Bicicletta città, Trapano Bosch, Seggiolone...'
-                  }
+                  placeholder="Es. Bici città, Trapano, Passaggio turno..."
                   value={titolo}
                   onChange={(e) => setTitolo(e.target.value)}
                   required
-                  style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: '10px', border: '1px solid #cbd5e1', fontFamily: fontBody }}
+                  style={{ width: '100%', boxSizing: 'border-box', padding: '9px 11px', borderRadius: '10px', border: '1px solid #cbd5e1' }}
                 />
               </div>
 
               {!isFormCercoAiuto && tipoAnnuncio !== 'In regalo' && (
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, marginBottom: '4px' }}>
-                    Prezzo (€){tipoAnnuncio === 'A noleggio' ? ' al giorno' : ' (opzionale)'}
+                  <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 700, marginBottom: '4px' }}>
+                    Prezzo (€){tipoAnnuncio === 'A noleggio' ? ' al giorno' : ''}
                   </label>
                   <input
                     type="number"
                     step="0.01"
                     min="0"
-                    placeholder="Es. 45"
+                    placeholder="Es. 35"
                     value={prezzo}
                     onChange={(e) => setPrezzo(e.target.value)}
-                    style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: '10px', border: '1px solid #cbd5e1', fontFamily: fontBody }}
+                    style={{ width: '100%', boxSizing: 'border-box', padding: '9px 11px', borderRadius: '10px', border: '1px solid #cbd5e1' }}
                   />
                 </div>
               )}
 
               {!isFormCercoAiuto && tipoAnnuncio !== 'In regalo' && (
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, marginBottom: '6px' }}>
-                    Modalità di pagamento accettate
-                  </label>
+                  <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 700, marginBottom: '6px' }}>Pagamenti accettati</label>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                     {MODALITA_PAGAMENTO.map((m) => {
                       const attiva = pagamentiAnnuncio.includes(m.label);
@@ -4291,12 +3676,12 @@ export default function App() {
                           type="button"
                           onClick={() => togglePagamentoInLista(pagamentiAnnuncio, setPagamentiAnnuncio, m.label)}
                           style={{
-                            padding: '6px 10px',
+                            padding: '5px 9px',
                             borderRadius: '999px',
                             border: attiva ? '1px solid #2563eb' : '1px solid #cbd5e1',
                             background: attiva ? '#eff6ff' : '#fff',
                             color: attiva ? '#1d4ed8' : '#475569',
-                            fontSize: '0.76rem',
+                            fontSize: '0.74rem',
                             fontWeight: 700,
                             cursor: 'pointer',
                           }}
@@ -4310,23 +3695,18 @@ export default function App() {
               )}
 
               <div>
-                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, marginBottom: '4px' }}>
-                  Descrizione *
-                </label>
+                <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 700, marginBottom: '4px' }}>Descrizione *</label>
                 <textarea
                   rows={3}
-                  placeholder="Condizioni, ritiro in azienda o dettagli utili per i colleghi..."
+                  placeholder="Condizioni, ritiro o dettagli utili..."
                   value={descrizione}
                   onChange={(e) => setDescrizione(e.target.value)}
                   required
-                  style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: '10px', border: '1px solid #cbd5e1', fontFamily: fontBody }}
+                  style={{ width: '100%', boxSizing: 'border-box', padding: '9px 11px', borderRadius: '10px', border: '1px solid #cbd5e1' }}
                 />
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, marginBottom: '6px' }}>
-                  Foto (fino a 4 immagini)
-                </label>
                 <label
                   style={{
                     display: 'inline-flex',
@@ -4335,26 +3715,22 @@ export default function App() {
                     background: '#f1f5f9',
                     border: '1px dashed #94a3b8',
                     borderRadius: '10px',
-                    padding: '8px 12px',
-                    fontSize: '0.82rem',
+                    padding: '7px 11px',
+                    fontSize: '0.8rem',
                     fontWeight: 700,
                     color: '#1b365d',
                     cursor: 'pointer',
                   }}
                 >
-                  📷 Aggiungi foto ({fotoAnnuncio.length}/4)
+                  📷 Foto ({fotoAnnuncio.length}/4)
                   <input type="file" accept="image/*" multiple onChange={handleFotoAnnuncioChange} style={{ display: 'none' }} />
                 </label>
 
                 {fotoAnnuncio.length > 0 && (
-                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '10px' }}>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '8px' }}>
                     {fotoAnnuncio.map((src, idx) => (
                       <div key={idx} style={{ position: 'relative' }}>
-                        <img
-                          src={src}
-                          alt={`Anteprima ${idx + 1}`}
-                          style={{ width: '72px', height: '72px', borderRadius: '10px', objectFit: 'cover', display: 'block' }}
-                        />
+                        <img src={src} alt={`Anteprima ${idx + 1}`} style={{ width: '64px', height: '64px', borderRadius: '8px', objectFit: 'cover' }} />
                         <button
                           type="button"
                           onClick={() => removeFotoAnnuncio(idx)}
@@ -4362,13 +3738,13 @@ export default function App() {
                             position: 'absolute',
                             top: '-6px',
                             right: '-6px',
-                            width: '20px',
-                            height: '20px',
+                            width: '18px',
+                            height: '18px',
                             borderRadius: '50%',
                             border: 'none',
                             background: '#dc2626',
                             color: '#fff',
-                            fontSize: '0.7rem',
+                            fontSize: '0.68rem',
                             fontWeight: 800,
                             cursor: 'pointer',
                           }}
@@ -4385,19 +3761,17 @@ export default function App() {
                 type="submit"
                 disabled={loading}
                 style={{
-                  marginTop: '4px',
-                  padding: '12px',
+                  padding: '11px',
                   borderRadius: '12px',
                   border: 'none',
                   background: '#2563eb',
                   color: '#fff',
                   fontFamily: fontHeading,
                   fontWeight: 800,
-                  fontSize: '0.98rem',
                   cursor: 'pointer',
                 }}
               >
-                {loading ? 'Pubblicazione in corso...' : 'Pubblica ora'}
+                {loading ? 'Pubblicazione...' : 'Pubblica'}
               </button>
             </form>
           </div>
@@ -4424,119 +3798,85 @@ export default function App() {
             style={{
               background: '#fff',
               borderRadius: '20px',
-              padding: '22px',
+              padding: '20px',
               width: '100%',
-              maxWidth: '460px',
+              maxWidth: '450px',
               maxHeight: '90vh',
               overflowY: 'auto',
-              boxShadow: '0 20px 50px rgba(0, 0, 0, 0.25)',
             }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-              <h2 style={{ margin: 0, fontFamily: fontHeading, fontSize: '1.18rem' }}>
-                Profilo Collega & Badge
-              </h2>
-              <button
-                type="button"
-                onClick={() => setShowProfileModal(false)}
-                style={{ background: 'transparent', border: 'none', fontSize: '1.2rem', cursor: 'pointer' }}
-              >
+              <h2 style={{ margin: 0, fontFamily: fontHeading, fontSize: '1.15rem' }}>Profilo Collega & Badge</h2>
+              <button type="button" onClick={() => setShowProfileModal(false)} style={{ background: 'transparent', border: 'none', fontSize: '1.15rem', cursor: 'pointer' }}>
                 ✕
               </button>
             </div>
 
             {errore && (
-              <div style={{ background: '#fee2e2', color: '#991b1b', padding: '10px 12px', borderRadius: '10px', marginBottom: '12px', fontSize: '0.84rem', fontWeight: 600 }}>
+              <div style={{ background: '#fee2e2', color: '#991b1b', padding: '10px', borderRadius: '10px', marginBottom: '10px', fontSize: '0.82rem', fontWeight: 600 }}>
                 {errore}
               </div>
             )}
 
-            <form onSubmit={handleSaveProfile} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <form onSubmit={handleSaveProfile} style={{ display: 'flex', flexDirection: 'column', gap: '11px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                 {authForm.fotoProfilo ? (
-                  <img
-                    src={authForm.fotoProfilo}
-                    alt="Foto profilo"
-                    style={{ width: '54px', height: '54px', borderRadius: '50%', objectFit: 'cover' }}
-                  />
+                  <img src={authForm.fotoProfilo} alt="Foto profilo" style={{ width: '52px', height: '52px', borderRadius: '50%', objectFit: 'cover' }} />
                 ) : (
-                  <div
-                    style={{
-                      width: '54px',
-                      height: '54px',
-                      borderRadius: '50%',
-                      background: '#eff6ff',
-                      color: '#1b365d',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontWeight: 800,
-                      fontSize: '1.2rem',
-                    }}
-                  >
+                  <div style={{ width: '52px', height: '52px', borderRadius: '50%', background: '#eff6ff', color: '#1b365d', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: '1.15rem' }}>
                     {(authForm.nome || 'C').charAt(0).toUpperCase()}
                   </div>
                 )}
-                <label style={{ fontSize: '0.82rem', fontWeight: 700, color: '#2563eb', cursor: 'pointer' }}>
+                <label style={{ fontSize: '0.8rem', fontWeight: 700, color: '#2563eb', cursor: 'pointer' }}>
                   Carica foto profilo
                   <input type="file" accept="image/*" onChange={handleFotoProfiloChange} style={{ display: 'none' }} />
                 </label>
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, marginBottom: '4px' }}>
-                  Nome e Cognome *
-                </label>
+                <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 700, marginBottom: '4px' }}>Nome e Cognome *</label>
                 <input
                   type="text"
                   placeholder="Es. Marco Rossi"
                   value={authForm.nome}
                   onChange={(e) => setAuthForm((prev) => ({ ...prev, nome: e.target.value }))}
                   required
-                  style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: '10px', border: '1px solid #cbd5e1', fontFamily: fontBody }}
+                  style={{ width: '100%', boxSizing: 'border-box', padding: '9px 11px', borderRadius: '10px', border: '1px solid #cbd5e1' }}
                 />
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, marginBottom: '4px' }}>
-                    Numero Badge
-                  </label>
+                  <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 700, marginBottom: '4px' }}>Numero Badge</label>
                   <input
                     type="text"
                     placeholder="Es. 0412"
                     value={authForm.badge}
                     onChange={(e) => setAuthForm((prev) => ({ ...prev, badge: e.target.value }))}
-                    style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: '10px', border: '1px solid #cbd5e1', fontFamily: fontBody }}
+                    style={{ width: '100%', boxSizing: 'border-box', padding: '9px 11px', borderRadius: '10px', border: '1px solid #cbd5e1' }}
                   />
                 </div>
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, marginBottom: '4px' }}>
-                    Email aziendale
-                  </label>
+                  <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 700, marginBottom: '4px' }}>Email aziendale</label>
                   <input
                     type="email"
                     placeholder="nome@azienda.it"
                     value={authForm.email}
                     onChange={(e) => setAuthForm((prev) => ({ ...prev, email: e.target.value }))}
-                    style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: '10px', border: '1px solid #cbd5e1', fontFamily: fontBody }}
+                    style={{ width: '100%', boxSizing: 'border-box', padding: '9px 11px', borderRadius: '10px', border: '1px solid #cbd5e1' }}
                   />
                 </div>
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, marginBottom: '4px' }}>
-                  Reparto di appartenenza
-                </label>
+                <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 700, marginBottom: '4px' }}>Reparto</label>
                 <select
                   value={authForm.reparto}
                   onChange={(e) => setAuthForm((prev) => ({ ...prev, reparto: e.target.value }))}
-                  style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', border: '1px solid #cbd5e1', fontFamily: fontBody }}
+                  style={{ width: '100%', padding: '9px 11px', borderRadius: '10px', border: '1px solid #cbd5e1' }}
                 >
                   {REPARTI_AZIENDA.map((rep) => (
-                    <option key={rep} value={rep}>
-                      {rep}
-                    </option>
+                    <option key={rep} value={rep}>{rep}</option>
                   ))}
                 </select>
               </div>
@@ -4544,15 +3884,13 @@ export default function App() {
               <button
                 type="submit"
                 style={{
-                  marginTop: '4px',
-                  padding: '12px',
+                  padding: '11px',
                   borderRadius: '12px',
                   border: 'none',
                   background: '#1b365d',
                   color: '#fff',
                   fontFamily: fontHeading,
                   fontWeight: 800,
-                  fontSize: '0.96rem',
                   cursor: 'pointer',
                 }}
               >
@@ -4563,7 +3901,7 @@ export default function App() {
         </div>
       )}
 
-      {/* MODALE IMPOSTAZIONI, PAGAMENTI & GESTIONE ANNUNCI */}
+      {/* MODALE IMPOSTAZIONI & GESTIONE ANNUNCI */}
       {showSettingsModal && (
         <div
           onClick={() => setShowSettingsModal(false)}
@@ -4583,113 +3921,71 @@ export default function App() {
             style={{
               background: '#fff',
               borderRadius: '20px',
-              padding: '22px',
+              padding: '20px',
               width: '100%',
-              maxWidth: '580px',
+              maxWidth: '560px',
               maxHeight: '90vh',
               overflowY: 'auto',
-              boxShadow: '0 20px 50px rgba(0, 0, 0, 0.25)',
             }}
           >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-              <h2 style={{ margin: 0, fontFamily: fontHeading, fontSize: '1.18rem' }}>
-                Impostazioni & I tuoi annunci
-              </h2>
-              <button
-                type="button"
-                onClick={() => setShowSettingsModal(false)}
-                style={{ background: 'transparent', border: 'none', fontSize: '1.2rem', cursor: 'pointer' }}
-              >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <h2 style={{ margin: 0, fontFamily: fontHeading, fontSize: '1.15rem' }}>Impostazioni & I tuoi annunci</h2>
+              <button type="button" onClick={() => setShowSettingsModal(false)} style={{ background: 'transparent', border: 'none', fontSize: '1.15rem', cursor: 'pointer' }}>
                 ✕
               </button>
             </div>
 
-            <div
-              style={{
-                background: '#f8fafc',
-                border: '1px solid #e2e8f0',
-                borderRadius: '14px',
-                padding: '14px',
-                marginBottom: '16px',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '12px',
-              }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>Notifiche messaggi & preferiti venduti</div>
-                  <div style={{ fontSize: '0.76rem', color: '#64748b' }}>
-                    Stato telefono: <strong>{notifPermission}</strong>
-                  </div>
+            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '14px', padding: '12px', marginBottom: '14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <div style={{ fontSize: '0.82rem' }}>
+                  <strong>Notifiche telefono:</strong> {notifPermission}
                 </div>
                 <button
                   type="button"
                   onClick={() => richiediPermessoNotifiche(true)}
-                  style={{
-                    background: '#2563eb',
-                    color: '#fff',
-                    border: 'none',
-                    borderRadius: '9px',
-                    padding: '7px 12px',
-                    fontSize: '0.78rem',
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                  }}
+                  style={{ background: '#2563eb', color: '#fff', border: 'none', borderRadius: '8px', padding: '6px 11px', fontSize: '0.76rem', fontWeight: 700, cursor: 'pointer' }}
                 >
-                  Abilita / Testa notifica
+                  Abilita / Testa
                 </button>
               </div>
 
-              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
-                <label style={{ fontSize: '0.82rem', fontWeight: 700 }}>Suoneria interna:</label>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                <label style={{ fontSize: '0.8rem', fontWeight: 700 }}>Suoneria:</label>
                 <select
                   value={settings.suoneria}
                   onChange={(e) => setSettings((prev) => ({ ...prev, suoneria: e.target.value }))}
-                  style={{ padding: '7px 10px', borderRadius: '9px', border: '1px solid #cbd5e1', fontFamily: fontBody }}
+                  style={{ padding: '6px 9px', borderRadius: '8px', border: '1px solid #cbd5e1' }}
                 >
                   {SUONERIE.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.label}
-                    </option>
+                    <option key={s.id} value={s.id}>{s.label}</option>
                   ))}
                 </select>
                 <button
                   type="button"
                   onClick={() => playNotificationSound(settings.suoneria)}
-                  style={{
-                    background: '#fff',
-                    border: '1px solid #cbd5e1',
-                    borderRadius: '9px',
-                    padding: '7px 11px',
-                    fontSize: '0.78rem',
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                  }}
+                  style={{ background: '#fff', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '6px 10px', fontSize: '0.76rem', fontWeight: 700, cursor: 'pointer' }}
                 >
-                  🔊 Ascolta
+                  🔊 Prova
                 </button>
               </div>
 
               <div>
-                <div style={{ fontSize: '0.82rem', fontWeight: 700, marginBottom: '6px' }}>
-                  Metodi di pagamento preferiti (inclusi contanti e criptovalute)
-                </div>
+                <div style={{ fontSize: '0.8rem', fontWeight: 700, marginBottom: '6px' }}>Metodi di pagamento preferiti</div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                   {MODALITA_PAGAMENTO.map((m) => {
-                    const attivo = (settings.pagamentiPreferiti || []).includes(m.label);
+                    const attiva = (settings.pagamentiPreferiti || []).includes(m.label);
                     return (
                       <button
                         key={m.id}
                         type="button"
                         onClick={() => togglePagamentoPreferito(m.label)}
                         style={{
-                          padding: '6px 10px',
+                          padding: '5px 9px',
                           borderRadius: '999px',
                           border: attiva ? '1px solid #1b365d' : '1px solid #cbd5e1',
                           background: attiva ? '#1b365d' : '#fff',
                           color: attiva ? '#fff' : '#475569',
-                          fontSize: '0.76rem',
+                          fontSize: '0.74rem',
                           fontWeight: 700,
                           cursor: 'pointer',
                         }}
@@ -4708,49 +4004,41 @@ export default function App() {
                 onClick={() => setSettingsTab('attivi')}
                 style={{
                   flex: 1,
-                  padding: '8px 12px',
+                  padding: '8px',
                   borderRadius: '10px',
                   border: settingsTab === 'attivi' ? '1px solid #2563eb' : '1px solid #e2e8f0',
                   background: settingsTab === 'attivi' ? '#eff6ff' : '#fff',
                   color: settingsTab === 'attivi' ? '#1d4ed8' : '#475569',
-                  fontFamily: fontHeading,
                   fontWeight: 800,
-                  fontSize: '0.82rem',
+                  fontSize: '0.8rem',
                   cursor: 'pointer',
                 }}
               >
-                Annunci attivi ({mieiAnnunciAttivi.length})
+                Attivi ({mieiAnnunciAttivi.length})
               </button>
               <button
                 type="button"
                 onClick={() => setSettingsTab('venduti')}
                 style={{
                   flex: 1,
-                  padding: '8px 12px',
+                  padding: '8px',
                   borderRadius: '10px',
                   border: settingsTab === 'venduti' ? '1px solid #dc2626' : '1px solid #e2e8f0',
                   background: settingsTab === 'venduti' ? '#fef2f2' : '#fff',
                   color: settingsTab === 'venduti' ? '#b91c1c' : '#475569',
-                  fontFamily: fontHeading,
                   fontWeight: 800,
-                  fontSize: '0.82rem',
+                  fontSize: '0.8rem',
                   cursor: 'pointer',
                 }}
               >
-                Venduti / Chiusi ({mieiAnnunciVenduti.length})
+                Venduti ({mieiAnnunciVenduti.length})
               </button>
             </div>
 
-            {!userProfile.nome ? (
-              <p style={{ fontSize: '0.84rem', color: '#64748b' }}>
-                Imposta prima il tuo nome nel profilo Badge per gestire i tuoi annunci.
-              </p>
-            ) : listaAnnunciImpostazioni.length === 0 ? (
-              <p style={{ fontSize: '0.84rem', color: '#64748b' }}>
-                Nessun annuncio in questa scheda.
-              </p>
+            {listaAnnunciImpostazioni.length === 0 ? (
+              <p style={{ fontSize: '0.82rem', color: '#64748b' }}>Nessun annuncio in questa scheda.</p>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {listaAnnunciImpostazioni.map((item) => {
                   const venduto = isAnnuncioVenduto(item);
                   return (
@@ -4764,61 +4052,33 @@ export default function App() {
                         display: 'flex',
                         justifyContent: 'space-between',
                         alignItems: 'center',
-                        gap: '10px',
+                        gap: '8px',
                         flexWrap: 'wrap',
                       }}
                     >
                       <div>
-                        <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#0f172a' }}>{item.titolo}</div>
-                        <div style={{ fontSize: '0.76rem', color: '#64748b' }}>
-                          {item.categoria} • {item.prezzo != null && item.prezzo > 0 ? `€ ${item.prezzo}` : item.tipo || 'In regalo'}
-                        </div>
+                        <div style={{ fontWeight: 700, fontSize: '0.88rem' }}>{item.titolo}</div>
+                        <div style={{ fontSize: '0.74rem', color: '#64748b' }}>{formatPrezzoCard(item)}</div>
                       </div>
-                      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                      <div style={{ display: 'flex', gap: '6px' }}>
                         <button
                           type="button"
                           onClick={() => apriModificaAnnuncio(item)}
-                          style={{
-                            background: '#fff',
-                            border: '1px solid #cbd5e1',
-                            borderRadius: '8px',
-                            padding: '5px 9px',
-                            fontSize: '0.76rem',
-                            fontWeight: 700,
-                            cursor: 'pointer',
-                          }}
+                          style={{ background: '#fff', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '5px 9px', fontSize: '0.74rem', fontWeight: 700, cursor: 'pointer' }}
                         >
                           Modifica
                         </button>
                         <button
                           type="button"
                           onClick={() => toggleStatoVenduto(item)}
-                          style={{
-                            background: venduto ? '#ecfdf5' : '#fef3c7',
-                            border: venduto ? '1px solid #a7f3d0' : '1px solid #fde68a',
-                            color: venduto ? '#047857' : '#92400e',
-                            borderRadius: '8px',
-                            padding: '5px 9px',
-                            fontSize: '0.76rem',
-                            fontWeight: 700,
-                            cursor: 'pointer',
-                          }}
+                          style={{ background: venduto ? '#ecfdf5' : '#fef3c7', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '5px 9px', fontSize: '0.74rem', fontWeight: 700, cursor: 'pointer' }}
                         >
-                          {venduto ? 'Riapri' : 'Segna venduto'}
+                          {venduto ? 'Riapri' : 'Venduto'}
                         </button>
                         <button
                           type="button"
                           onClick={() => setAnnuncioDaEliminare(item)}
-                          style={{
-                            background: '#fee2e2',
-                            border: '1px solid #fecaca',
-                            color: '#b91c1c',
-                            borderRadius: '8px',
-                            padding: '5px 9px',
-                            fontSize: '0.76rem',
-                            fontWeight: 700,
-                            cursor: 'pointer',
-                          }}
+                          style={{ background: '#fee2e2', border: '1px solid #fecaca', color: '#b91c1c', borderRadius: '8px', padding: '5px 9px', fontSize: '0.74rem', fontWeight: 700, cursor: 'pointer' }}
                         >
                           Elimina
                         </button>
@@ -4852,100 +4112,48 @@ export default function App() {
             style={{
               background: '#fff',
               borderRadius: '20px',
-              padding: '22px',
+              padding: '20px',
               width: '100%',
-              maxWidth: '480px',
+              maxWidth: '460px',
               maxHeight: '90vh',
               overflowY: 'auto',
-              boxShadow: '0 20px 50px rgba(0, 0, 0, 0.25)',
             }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-              <h2 style={{ margin: 0, fontFamily: fontHeading, fontSize: '1.15rem' }}>Modifica annuncio</h2>
-              <button
-                type="button"
-                onClick={() => setAnnuncioInModifica(null)}
-                style={{ background: 'transparent', border: 'none', fontSize: '1.2rem', cursor: 'pointer' }}
-              >
+              <h2 style={{ margin: 0, fontFamily: fontHeading, fontSize: '1.12rem' }}>Modifica annuncio</h2>
+              <button type="button" onClick={() => setAnnuncioInModifica(null)} style={{ background: 'transparent', border: 'none', fontSize: '1.15rem', cursor: 'pointer' }}>
                 ✕
               </button>
             </div>
 
-            <form onSubmit={handleSalvaModificaAnnuncio} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, marginBottom: '4px' }}>Titolo</label>
+            <form onSubmit={handleSalvaModificaAnnuncio} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <input
+                type="text"
+                value={editForm.titolo}
+                onChange={(e) => setEditForm((prev) => ({ ...prev, titolo: e.target.value }))}
+                required
+                style={{ padding: '9px 11px', borderRadius: '10px', border: '1px solid #cbd5e1' }}
+              />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                <select
+                  value={editForm.categoria}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, categoria: e.target.value }))}
+                  style={{ padding: '9px 11px', borderRadius: '10px', border: '1px solid #cbd5e1' }}
+                >
+                  {[...CATEGORIE_FORM, 'Cerco / Aiuto'].map((cat) => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </select>
                 <input
-                  type="text"
-                  value={editForm.titolo}
-                  onChange={(e) => setEditForm((prev) => ({ ...prev, titolo: e.target.value }))}
-                  required
-                  style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: '10px', border: '1px solid #cbd5e1', fontFamily: fontBody }}
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="Prezzo €"
+                  value={editForm.prezzo}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, prezzo: e.target.value }))}
+                  style={{ padding: '9px 11px', borderRadius: '10px', border: '1px solid #cbd5e1' }}
                 />
               </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, marginBottom: '4px' }}>Categoria</label>
-                  <select
-                    value={editForm.categoria}
-                    onChange={(e) => setEditForm((prev) => ({ ...prev, categoria: e.target.value }))}
-                    style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', border: '1px solid #cbd5e1', fontFamily: fontBody }}
-                  >
-                    {[...CATEGORIE_FORM, 'Cerco / Aiuto'].map((cat) => (
-                      <option key={cat} value={cat}>
-                        {cat}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, marginBottom: '4px' }}>Prezzo (€)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={editForm.prezzo}
-                    onChange={(e) => setEditForm((prev) => ({ ...prev, prezzo: e.target.value }))}
-                    style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: '10px', border: '1px solid #cbd5e1', fontFamily: fontBody }}
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, marginBottom: '6px' }}>Pagamenti</label>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                  {MODALITA_PAGAMENTO.map((m) => {
-                    const attiva = (editForm.pagamenti || []).includes(m.label);
-                    return (
-                      <button
-                        key={m.id}
-                        type="button"
-                        onClick={() =>
-                          togglePagamentoInLista(
-                            editForm.pagamenti || [],
-                            (next) => setEditForm((prev) => ({ ...prev, pagamenti: next })),
-                            m.label
-                          )
-                        }
-                        style={{
-                          padding: '5px 9px',
-                          borderRadius: '999px',
-                          border: attiva ? '1px solid #2563eb' : '1px solid #cbd5e1',
-                          background: attiva ? '#eff6ff' : '#fff',
-                          color: attiva ? '#1d4ed8' : '#475569',
-                          fontSize: '0.74rem',
-                          fontWeight: 700,
-                          cursor: 'pointer',
-                        }}
-                      >
-                        {m.icon} {m.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
               <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.84rem', fontWeight: 700 }}>
                 <input
                   type="checkbox"
@@ -4954,33 +4162,19 @@ export default function App() {
                 />
                 Segna come VENDUTO
               </label>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, marginBottom: '4px' }}>Descrizione</label>
-                <textarea
-                  rows={3}
-                  value={editForm.descrizione}
-                  onChange={(e) => setEditForm((prev) => ({ ...prev, descrizione: e.target.value }))}
-                  required
-                  style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: '10px', border: '1px solid #cbd5e1', fontFamily: fontBody }}
-                />
-              </div>
-
+              <textarea
+                rows={3}
+                value={editForm.descrizione}
+                onChange={(e) => setEditForm((prev) => ({ ...prev, descrizione: e.target.value }))}
+                required
+                style={{ padding: '9px 11px', borderRadius: '10px', border: '1px solid #cbd5e1' }}
+              />
               <button
                 type="submit"
                 disabled={salvataggioModifica}
-                style={{
-                  padding: '12px',
-                  borderRadius: '12px',
-                  border: 'none',
-                  background: '#2563eb',
-                  color: '#fff',
-                  fontFamily: fontHeading,
-                  fontWeight: 800,
-                  cursor: 'pointer',
-                }}
+                style={{ padding: '11px', borderRadius: '12px', border: 'none', background: '#2563eb', color: '#fff', fontFamily: fontHeading, fontWeight: 800, cursor: 'pointer' }}
               >
-                {salvataggioModifica ? 'Salvataggio...' : 'Salva modifiche'}
+                {salvataggioModifica ? 'Salvataggio...' : 'Salva'}
               </button>
             </form>
           </div>
@@ -5002,49 +4196,16 @@ export default function App() {
             zIndex: 85,
           }}
         >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              background: '#fff',
-              borderRadius: '18px',
-              padding: '20px',
-              width: '100%',
-              maxWidth: '380px',
-              boxShadow: '0 20px 50px rgba(0, 0, 0, 0.25)',
-            }}
-          >
-            <h3 style={{ margin: '0 0 8px', fontFamily: fontHeading, fontSize: '1.1rem' }}>Eliminare l’annuncio?</h3>
-            <p style={{ margin: '0 0 16px', fontSize: '0.88rem', color: '#475569' }}>
-              Vuoi rimuovere definitivamente <strong>"{annuncioDaEliminare.titolo}"</strong>?
+          <div onClick={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: '18px', padding: '20px', width: '100%', maxWidth: '370px' }}>
+            <h3 style={{ margin: '0 0 8px', fontFamily: fontHeading, fontSize: '1.08rem' }}>Eliminare l’annuncio?</h3>
+            <p style={{ margin: '0 0 14px', fontSize: '0.86rem', color: '#475569' }}>
+              Rimuovere <strong>"{annuncioDaEliminare.titolo}"</strong>?
             </p>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-              <button
-                type="button"
-                onClick={() => setAnnuncioDaEliminare(null)}
-                style={{
-                  padding: '8px 14px',
-                  borderRadius: '10px',
-                  border: '1px solid #cbd5e1',
-                  background: '#fff',
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                }}
-              >
+              <button type="button" onClick={() => setAnnuncioDaEliminare(null)} style={{ padding: '8px 13px', borderRadius: '10px', border: '1px solid #cbd5e1', background: '#fff', fontWeight: 700, cursor: 'pointer' }}>
                 Annulla
               </button>
-              <button
-                type="button"
-                onClick={confermaEliminazioneAnnuncio}
-                style={{
-                  padding: '8px 14px',
-                  borderRadius: '10px',
-                  border: 'none',
-                  background: '#dc2626',
-                  color: '#fff',
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                }}
-              >
+              <button type="button" onClick={confermaEliminazioneAnnuncio} style={{ padding: '8px 13px', borderRadius: '10px', border: 'none', background: '#dc2626', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
                 Elimina
               </button>
             </div>
@@ -5073,57 +4234,26 @@ export default function App() {
               background: '#fff',
               borderRadius: '20px',
               width: '100%',
-              maxWidth: '480px',
+              maxWidth: '470px',
               maxHeight: '85vh',
               display: 'flex',
               flexDirection: 'column',
               overflow: 'hidden',
-              boxShadow: '0 20px 50px rgba(0, 0, 0, 0.25)',
             }}
           >
-            <div
-              style={{
-                background: '#1b365d',
-                color: '#fff',
-                padding: '14px 18px',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                gap: '10px',
-              }}
-            >
+            <div style={{ background: '#1b365d', color: '#fff', padding: '13px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
-                <div style={{ fontFamily: fontHeading, fontWeight: 800, fontSize: '1rem' }}>
-                  💬 {chatAperta.altroUtente}
-                </div>
-                <div style={{ fontSize: '0.76rem', color: '#bfdbfe' }}>
-                  {chatAperta.annuncio?.titolo || 'Chat tra colleghi'}
-                </div>
+                <div style={{ fontFamily: fontHeading, fontWeight: 800, fontSize: '0.98rem' }}>💬 {chatAperta.altroUtente}</div>
+                <div style={{ fontSize: '0.74rem', color: '#bfdbfe' }}>{chatAperta.annuncio?.titolo || 'Chat'}</div>
               </div>
-              <button
-                type="button"
-                onClick={() => setChatAperta(null)}
-                style={{ background: 'transparent', border: 'none', color: '#fff', fontSize: '1.2rem', cursor: 'pointer' }}
-              >
+              <button type="button" onClick={() => setChatAperta(null)} style={{ background: 'transparent', border: 'none', color: '#fff', fontSize: '1.15rem', cursor: 'pointer' }}>
                 ✕
               </button>
             </div>
 
-            <div
-              style={{
-                flex: 1,
-                padding: '14px',
-                overflowY: 'auto',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '8px',
-                background: '#f8fafc',
-              }}
-            >
+            <div style={{ flex: 1, padding: '14px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px', background: '#f8fafc' }}>
               {messaggiChatAttiva.length === 0 ? (
-                <p style={{ textAlign: 'center', color: '#64748b', fontSize: '0.84rem', margin: '20px 0' }}>
-                  Scrivi il primo messaggio a <strong>{chatAperta.altroUtente}</strong>.
-                </p>
+                <p style={{ textAlign: 'center', color: '#64748b', fontSize: '0.84rem' }}>Scrivi il primo messaggio a {chatAperta.altroUtente}.</p>
               ) : (
                 messaggiChatAttiva.map((m, idx) => {
                   const mioNome = extractBaseName(userProfile.nome).toLowerCase();
@@ -5138,9 +4268,8 @@ export default function App() {
                         color: isMio ? '#ffffff' : '#0f172a',
                         border: isMio ? 'none' : '1px solid #e2e8f0',
                         borderRadius: '14px',
-                        padding: '9px 12px',
-                        fontSize: '0.88rem',
-                        boxShadow: '0 1px 4px rgba(15, 23, 42, 0.05)',
+                        padding: '8px 12px',
+                        fontSize: '0.86rem',
                       }}
                     >
                       {m.testo}
@@ -5150,42 +4279,18 @@ export default function App() {
               )}
             </div>
 
-            <form
-              onSubmit={handleInviaMessaggio}
-              style={{
-                padding: '12px',
-                borderTop: '1px solid #e2e8f0',
-                background: '#fff',
-                display: 'flex',
-                gap: '8px',
-              }}
-            >
+            <form onSubmit={handleInviaMessaggio} style={{ padding: '10px', borderTop: '1px solid #e2e8f0', background: '#fff', display: 'flex', gap: '8px' }}>
               <input
                 type="text"
                 placeholder="Scrivi un messaggio..."
                 value={nuovoMessaggio}
                 onChange={(e) => setNuovoMessaggio(e.target.value)}
-                style={{
-                  flex: 1,
-                  padding: '10px 12px',
-                  borderRadius: '10px',
-                  border: '1px solid #cbd5e1',
-                  fontFamily: fontBody,
-                }}
+                style={{ flex: 1, padding: '9px 11px', borderRadius: '10px', border: '1px solid #cbd5e1' }}
               />
               <button
                 type="submit"
                 disabled={invioMessaggio}
-                style={{
-                  padding: '10px 16px',
-                  borderRadius: '10px',
-                  border: 'none',
-                  background: '#1b365d',
-                  color: '#fff',
-                  fontFamily: fontHeading,
-                  fontWeight: 800,
-                  cursor: 'pointer',
-                }}
+                style={{ padding: '9px 14px', borderRadius: '10px', border: 'none', background: '#1b365d', color: '#fff', fontFamily: fontHeading, fontWeight: 800, cursor: 'pointer' }}
               >
                 Invia
               </button>
@@ -5209,82 +4314,34 @@ export default function App() {
             zIndex: 85,
           }}
         >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              background: '#fff',
-              borderRadius: '20px',
-              padding: '22px',
-              width: '100%',
-              maxWidth: '400px',
-              boxShadow: '0 20px 50px rgba(0, 0, 0, 0.25)',
-            }}
-          >
-            <h3 style={{ margin: '0 0 6px', fontFamily: fontHeading, fontSize: '1.12rem' }}>
-              Valuta {utenteDaValutare}
-            </h3>
-            <p style={{ margin: '0 0 14px', fontSize: '0.82rem', color: '#64748b' }}>
-              Seleziona da 1 a 5 stelle in base alla correttezza e disponibilità tra colleghi.
-            </p>
-
-            <form onSubmit={handleSalvaValutazione} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', padding: '6px 0' }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: '20px', padding: '20px', width: '100%', maxWidth: '390px' }}>
+            <h3 style={{ margin: '0 0 6px', fontFamily: fontHeading, fontSize: '1.1rem' }}>Valuta {utenteDaValutare}</h3>
+            <form onSubmit={handleSalvaValutazione} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
                 {[1, 2, 3, 4, 5].map((n) => (
                   <button
                     key={n}
                     type="button"
                     onClick={() => setStelleSelezionate(n)}
-                    style={{
-                      background: 'transparent',
-                      border: 'none',
-                      fontSize: '2rem',
-                      color: n <= stelleSelezionate ? '#f59e0b' : '#cbd5e1',
-                      cursor: 'pointer',
-                    }}
+                    style={{ background: 'transparent', border: 'none', fontSize: '1.9rem', color: n <= stelleSelezionate ? '#f59e0b' : '#cbd5e1', cursor: 'pointer' }}
                   >
                     ★
                   </button>
                 ))}
               </div>
-
               <textarea
                 rows={2}
                 placeholder="Commento breve (opzionale)..."
                 value={commentoValutazione}
                 onChange={(e) => setCommentoValutazione(e.target.value)}
-                style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: '10px', border: '1px solid #cbd5e1', fontFamily: fontBody }}
+                style={{ padding: '9px 11px', borderRadius: '10px', border: '1px solid #cbd5e1' }}
               />
-
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-                <button
-                  type="button"
-                  onClick={() => setUtenteDaValutare(null)}
-                  style={{
-                    padding: '9px 14px',
-                    borderRadius: '10px',
-                    border: '1px solid #cbd5e1',
-                    background: '#fff',
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                  }}
-                >
+                <button type="button" onClick={() => setUtenteDaValutare(null)} style={{ padding: '8px 13px', borderRadius: '10px', border: '1px solid #cbd5e1', background: '#fff', fontWeight: 700, cursor: 'pointer' }}>
                   Annulla
                 </button>
-                <button
-                  type="submit"
-                  disabled={invioValutazione}
-                  style={{
-                    padding: '9px 16px',
-                    borderRadius: '10px',
-                    border: 'none',
-                    background: '#2563eb',
-                    color: '#fff',
-                    fontFamily: fontHeading,
-                    fontWeight: 800,
-                    cursor: 'pointer',
-                  }}
-                >
-                  {invioValutazione ? 'Invio...' : 'Salva voto'}
+                <button type="submit" disabled={invioValutazione} style={{ padding: '8px 15px', borderRadius: '10px', border: 'none', background: '#2563eb', color: '#fff', fontFamily: fontHeading, fontWeight: 800, cursor: 'pointer' }}>
+                  {invioValutazione ? 'Invio...' : 'Salva'}
                 </button>
               </div>
             </form>
@@ -5307,39 +4364,23 @@ export default function App() {
             zIndex: 85,
           }}
         >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              background: '#fff',
-              borderRadius: '20px',
-              padding: '22px',
-              width: '100%',
-              maxWidth: '420px',
-              boxShadow: '0 20px 50px rgba(0, 0, 0, 0.25)',
-            }}
-          >
-            <h3 style={{ margin: '0 0 12px', fontFamily: fontHeading, fontSize: '1.1rem', color: '#1b365d' }}>
-              Aggiorna KPI • {repartoInModificaKpi}
+          <div onClick={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: '20px', padding: '20px', width: '100%', maxWidth: '400px' }}>
+            <h3 style={{ margin: '0 0 12px', fontFamily: fontHeading, fontSize: '1.05rem', color: '#1b365d' }}>
+              KPI • {repartoInModificaKpi}
             </h3>
-
-            <form onSubmit={handleSalvaKpiReparto} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <form onSubmit={handleSalvaKpiReparto} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               <div>
-                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, marginBottom: '4px' }}>
-                  Giorni senza infortuni
-                </label>
+                <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 700, marginBottom: '4px' }}>Giorni senza infortuni</label>
                 <input
                   type="number"
                   min="0"
                   value={kpiEditForm.giorniSenzaInfortuni}
                   onChange={(e) => setKpiEditForm((prev) => ({ ...prev, giorniSenzaInfortuni: e.target.value }))}
-                  style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: '10px', border: '1px solid #cbd5e1', fontFamily: fontBody }}
+                  style={{ width: '100%', boxSizing: 'border-box', padding: '9px 11px', borderRadius: '10px', border: '1px solid #cbd5e1' }}
                 />
               </div>
-
               <div>
-                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, marginBottom: '4px' }}>
-                  Livello qualità (%)
-                </label>
+                <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 700, marginBottom: '4px' }}>Livello qualità (%)</label>
                 <input
                   type="number"
                   step="0.1"
@@ -5347,51 +4388,24 @@ export default function App() {
                   max="100"
                   value={kpiEditForm.livelloQualita}
                   onChange={(e) => setKpiEditForm((prev) => ({ ...prev, livelloQualita: e.target.value }))}
-                  style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: '10px', border: '1px solid #cbd5e1', fontFamily: fontBody }}
+                  style={{ width: '100%', boxSizing: 'border-box', padding: '9px 11px', borderRadius: '10px', border: '1px solid #cbd5e1' }}
                 />
               </div>
-
               <div>
-                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, marginBottom: '4px' }}>
-                  Infortuni registrati
-                </label>
+                <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 700, marginBottom: '4px' }}>Infortuni registrati</label>
                 <input
                   type="number"
                   min="0"
                   value={kpiEditForm.infortuniAnno}
                   onChange={(e) => setKpiEditForm((prev) => ({ ...prev, infortuniAnno: e.target.value }))}
-                  style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: '10px', border: '1px solid #cbd5e1', fontFamily: fontBody }}
+                  style={{ width: '100%', boxSizing: 'border-box', padding: '9px 11px', borderRadius: '10px', border: '1px solid #cbd5e1' }}
                 />
               </div>
-
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '4px' }}>
-                <button
-                  type="button"
-                  onClick={() => setRepartoInModificaKpi(null)}
-                  style={{
-                    padding: '9px 14px',
-                    borderRadius: '10px',
-                    border: '1px solid #cbd5e1',
-                    background: '#fff',
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                  }}
-                >
+                <button type="button" onClick={() => setRepartoInModificaKpi(null)} style={{ padding: '8px 13px', borderRadius: '10px', border: '1px solid #cbd5e1', background: '#fff', fontWeight: 700, cursor: 'pointer' }}>
                   Annulla
                 </button>
-                <button
-                  type="submit"
-                  style={{
-                    padding: '9px 16px',
-                    borderRadius: '10px',
-                    border: 'none',
-                    background: '#1b365d',
-                    color: '#fff',
-                    fontFamily: fontHeading,
-                    fontWeight: 800,
-                    cursor: 'pointer',
-                  }}
-                >
+                <button type="submit" style={{ padding: '8px 15px', borderRadius: '10px', border: 'none', background: '#1b365d', color: '#fff', fontFamily: fontHeading, fontWeight: 800, cursor: 'pointer' }}>
                   Salva KPI
                 </button>
               </div>
