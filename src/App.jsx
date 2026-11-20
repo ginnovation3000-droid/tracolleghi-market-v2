@@ -466,6 +466,7 @@ export default function App() {
   const [swBannerDismissed, setSwBannerDismissed] = useState(false);
   const [swUpdating, setSwUpdating] = useState(false);
   const waitingWorkerRef = useRef(null);
+  const profilePanelRef = useRef(null);
 
   useEffect(() => {
     const link = document.createElement('link');
@@ -602,6 +603,22 @@ export default function App() {
     fotoProfilo: userProfile.fotoProfilo || '',
   });
   const [showProfileModal, setShowProfileModal] = useState(false);
+
+  // Chiude il pannello Profilo Collega & Badge quando si clicca fuori dal riquadro
+  useEffect(() => {
+    if (!showProfileModal) return;
+
+    const handleClickOutside = (e) => {
+      if (profilePanelRef.current && !profilePanelRef.current.contains(e.target)) {
+        setShowProfileModal(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showProfileModal]);
 
   // --- STATO ADMIN & IMPORTAZIONE MASSIVA BADGE ---
   const [isAdminUnlocked, setIsAdminUnlocked] = useState(() => {
@@ -1893,6 +1910,13 @@ export default function App() {
     }
     if (!userProfile.registrato || !userProfile.nome.trim()) {
       setErrore('Registrati prima con Badge o Email aziendale per pubblicare.');
+      setAuthForm({
+        nome: userProfile.nome || '',
+        badge: userProfile.badge || '',
+        email: userProfile.email || '',
+        reparto: userProfile.reparto || REPARTI_AZIENDA[0],
+        fotoProfilo: userProfile.fotoProfilo || '',
+      });
       setShowProfileModal(true);
       return;
     }
@@ -3049,30 +3073,163 @@ export default function App() {
         </div>
       )}
 
-      {/* HEADER LUMINOSO AD ALTO CONTRASTO CON LOGO INCORNICIATO, SCRITTA MARKET E RICERCA */}
+      {/* HEADER LUMINOSO AD ALTO CONTRASTO CON PANNELLO PROFILO BADGE INTEGRATO NELL'ICONA A SINISTRA */}
       <header className="tm-top-header">
         <div className="tm-container">
           <div className="tm-header-top-row">
-            <div className="tm-brand" onClick={() => setSezioneAttiva('bacheca')}>
-              <div className="tm-brand-logo-wrap">
-                <img
-                  src="/icona-tracolleghi.jpg"
-                  alt="TRACOLLEGHI MARKET"
-                  className="tm-brand-logo"
-                  onError={(e) => {
-                    e.currentTarget.style.display = 'none';
-                  }}
-                />
-              </div>
-              <div className="tm-brand-text-col">
-                <div className="tm-brand-name">TRACOLLEGHI</div>
-                <div className="tm-brand-market-row">
-                  <span className="tm-brand-sub">
-                    <span className="tm-live-dot" />
-                    MARKET
-                  </span>
+            <div ref={profilePanelRef} className="tm-brand" style={{ position: 'relative' }}>
+              <div
+                onClick={() => {
+                  setErrore('');
+                  setAuthForm({
+                    nome: userProfile.nome || '',
+                    badge: userProfile.badge || '',
+                    email: userProfile.email || '',
+                    reparto: userProfile.reparto || REPARTI_AZIENDA[0],
+                    fotoProfilo: userProfile.fotoProfilo || '',
+                  });
+                  setShowProfileModal((prev) => !prev);
+                }}
+                style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}
+                title="Apri Profilo Collega & Badge"
+              >
+                <div className="tm-brand-logo-wrap">
+                  <img
+                    src="/icona-tracolleghi.jpg"
+                    alt="TRACOLLEGHI MARKET"
+                    className="tm-brand-logo"
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none';
+                    }}
+                  />
+                </div>
+                <div className="tm-brand-text-col">
+                  <div className="tm-brand-name">TRACOLLEGHI</div>
+                  <div className="tm-brand-market-row">
+                    <span className="tm-brand-sub">
+                      <span className="tm-live-dot" />
+                      MARKET
+                    </span>
+                  </div>
                 </div>
               </div>
+
+              {showProfileModal && (
+                <div
+                  onClick={(e) => e.stopPropagation()}
+                  style={{
+                    position: 'absolute',
+                    top: 'calc(100% + 10px)',
+                    left: 0,
+                    background: '#fff',
+                    borderRadius: '20px',
+                    padding: '20px',
+                    width: 'min(92vw, 440px)',
+                    maxHeight: '82vh',
+                    overflowY: 'auto',
+                    boxShadow: '0 18px 45px rgba(15, 23, 42, 0.24)',
+                    border: '1.5px solid #e2e8f0',
+                    zIndex: 90,
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                    <h2 style={{ margin: 0, fontFamily: fontHeading, fontSize: '1.12rem' }}>Profilo Collega & Badge</h2>
+                    <button
+                      type="button"
+                      onClick={() => setShowProfileModal(false)}
+                      style={{ background: 'transparent', border: 'none', fontSize: '1.15rem', cursor: 'pointer' }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+
+                  {errore && (
+                    <div style={{ background: '#fee2e2', color: '#991b1b', padding: '10px', borderRadius: '10px', marginBottom: '10px', fontSize: '0.82rem', fontWeight: 600 }}>
+                      {errore}
+                    </div>
+                  )}
+
+                  <form onSubmit={handleSaveProfile} style={{ display: 'flex', flexDirection: 'column', gap: '11px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      {authForm.fotoProfilo ? (
+                        <img src={authForm.fotoProfilo} alt="Foto profilo" style={{ width: '52px', height: '52px', borderRadius: '50%', objectFit: 'cover' }} />
+                      ) : (
+                        <div style={{ width: '52px', height: '52px', borderRadius: '50%', background: '#eff6ff', color: '#0f172a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: '1.15rem' }}>
+                          {(authForm.nome || 'C').charAt(0).toUpperCase()}
+                        </div>
+                      )}
+                      <label style={{ fontSize: '0.8rem', fontWeight: 700, color: '#2563eb', cursor: 'pointer' }}>
+                        Carica foto profilo
+                        <input type="file" accept="image/*" onChange={handleFotoProfiloChange} style={{ display: 'none' }} />
+                      </label>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 700, marginBottom: '4px' }}>Numero Badge</label>
+                        <input
+                          type="text"
+                          placeholder="Es. 1001"
+                          value={authForm.badge}
+                          onChange={(e) => handleBadgeInputInProfile(e.target.value)}
+                          style={{ width: '100%', boxSizing: 'border-box', padding: '9px 11px', borderRadius: '10px', border: '1px solid #cbd5e1' }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 700, marginBottom: '4px' }}>Email aziendale</label>
+                        <input
+                          type="email"
+                          placeholder="nome@azienda.it"
+                          value={authForm.email}
+                          onChange={(e) => setAuthForm((prev) => ({ ...prev, email: e.target.value }))}
+                          style={{ width: '100%', boxSizing: 'border-box', padding: '9px 11px', borderRadius: '10px', border: '1px solid #cbd5e1' }}
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 700, marginBottom: '4px' }}>Nome e Cognome *</label>
+                      <input
+                        type="text"
+                        placeholder="Es. Giancarlo Gentile"
+                        value={authForm.nome}
+                        onChange={(e) => setAuthForm((prev) => ({ ...prev, nome: e.target.value }))}
+                        required
+                        style={{ width: '100%', boxSizing: 'border-box', padding: '9px 11px', borderRadius: '10px', border: '1px solid #cbd5e1' }}
+                      />
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 700, marginBottom: '4px' }}>Reparto</label>
+                      <select
+                        value={authForm.reparto}
+                        onChange={(e) => setAuthForm((prev) => ({ ...prev, reparto: e.target.value }))}
+                        style={{ width: '100%', padding: '9px 11px', borderRadius: '10px', border: '1px solid #cbd5e1' }}
+                      >
+                        {REPARTI_AZIENDA.map((rep) => (
+                          <option key={rep} value={rep}>{rep}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <button
+                      type="submit"
+                      style={{
+                        padding: '11px',
+                        borderRadius: '12px',
+                        border: 'none',
+                        background: 'linear-gradient(135deg, #0f172a 0%, #2563eb 100%)',
+                        color: '#fff',
+                        fontFamily: fontHeading,
+                        fontWeight: 800,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Salva profilo
+                    </button>
+                  </form>
+                </div>
+              )}
             </div>
 
             <div className="tm-header-actions">
@@ -3088,7 +3245,7 @@ export default function App() {
                     reparto: userProfile.reparto || REPARTI_AZIENDA[0],
                     fotoProfilo: userProfile.fotoProfilo || '',
                   });
-                  setShowProfileModal(true);
+                  setShowProfileModal((prev) => !prev);
                 }}
               >
                 {userProfile.fotoProfilo ? (
@@ -4991,131 +5148,6 @@ export default function App() {
                 }}
               >
                 {loading ? 'Pubblicazione...' : 'Pubblica'}
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* MODALE PROFILO BADGE */}
-      {showProfileModal && (
-        <div
-          onClick={() => setShowProfileModal(false)}
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(15, 23, 42, 0.56)',
-            backdropFilter: 'blur(6px)',
-            WebkitBackdropFilter: 'blur(6px)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '16px',
-            zIndex: 70,
-          }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              background: '#fff',
-              borderRadius: '20px',
-              padding: '20px',
-              width: '100%',
-              maxWidth: '450px',
-              maxHeight: '90vh',
-              overflowY: 'auto',
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-              <h2 style={{ margin: 0, fontFamily: fontHeading, fontSize: '1.15rem' }}>Profilo Collega & Badge</h2>
-              <button type="button" onClick={() => setShowProfileModal(false)} style={{ background: 'transparent', border: 'none', fontSize: '1.15rem', cursor: 'pointer' }}>
-                ✕
-              </button>
-            </div>
-
-            {errore && (
-              <div style={{ background: '#fee2e2', color: '#991b1b', padding: '10px', borderRadius: '10px', marginBottom: '10px', fontSize: '0.82rem', fontWeight: 600 }}>
-                {errore}
-              </div>
-            )}
-
-            <form onSubmit={handleSaveProfile} style={{ display: 'flex', flexDirection: 'column', gap: '11px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                {authForm.fotoProfilo ? (
-                  <img src={authForm.fotoProfilo} alt="Foto profilo" style={{ width: '52px', height: '52px', borderRadius: '50%', objectFit: 'cover' }} />
-                ) : (
-                  <div style={{ width: '52px', height: '52px', borderRadius: '50%', background: '#eff6ff', color: '#0f172a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: '1.15rem' }}>
-                    {(authForm.nome || 'C').charAt(0).toUpperCase()}
-                  </div>
-                )}
-                <label style={{ fontSize: '0.8rem', fontWeight: 700, color: '#2563eb', cursor: 'pointer' }}>
-                  Carica foto profilo
-                  <input type="file" accept="image/*" onChange={handleFotoProfiloChange} style={{ display: 'none' }} />
-                </label>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 700, marginBottom: '4px' }}>Numero Badge</label>
-                  <input
-                    type="text"
-                    placeholder="Es. 1001"
-                    value={authForm.badge}
-                    onChange={(e) => handleBadgeInputInProfile(e.target.value)}
-                    style={{ width: '100%', boxSizing: 'border-box', padding: '9px 11px', borderRadius: '10px', border: '1px solid #cbd5e1' }}
-                  />
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 700, marginBottom: '4px' }}>Email aziendale</label>
-                  <input
-                    type="email"
-                    placeholder="nome@azienda.it"
-                    value={authForm.email}
-                    onChange={(e) => setAuthForm((prev) => ({ ...prev, email: e.target.value }))}
-                    style={{ width: '100%', boxSizing: 'border-box', padding: '9px 11px', borderRadius: '10px', border: '1px solid #cbd5e1' }}
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 700, marginBottom: '4px' }}>Nome e Cognome *</label>
-                <input
-                  type="text"
-                  placeholder="Es. Giancarlo Gentile"
-                  value={authForm.nome}
-                  onChange={(e) => setAuthForm((prev) => ({ ...prev, nome: e.target.value }))}
-                  required
-                  style={{ width: '100%', boxSizing: 'border-box', padding: '9px 11px', borderRadius: '10px', border: '1px solid #cbd5e1' }}
-                />
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 700, marginBottom: '4px' }}>Reparto</label>
-                <select
-                  value={authForm.reparto}
-                  onChange={(e) => setAuthForm((prev) => ({ ...prev, reparto: e.target.value }))}
-                  style={{ width: '100%', padding: '9px 11px', borderRadius: '10px', border: '1px solid #cbd5e1' }}
-                >
-                  {REPARTI_AZIENDA.map((rep) => (
-                    <option key={rep} value={rep}>{rep}</option>
-                  ))}
-                </select>
-              </div>
-
-              <button
-                type="submit"
-                style={{
-                  padding: '11px',
-                  borderRadius: '12px',
-                  border: 'none',
-                  background: 'linear-gradient(135deg, #0f172a 0%, #2563eb 100%)',
-                  color: '#fff',
-                  fontFamily: fontHeading,
-                  fontWeight: 800,
-                  cursor: 'pointer',
-                }}
-              >
-                Salva profilo
               </button>
             </form>
           </div>
