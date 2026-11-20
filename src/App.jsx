@@ -200,6 +200,24 @@ const REPARTI_AZIENDA = [
   'Altro Reparto',
 ];
 
+const INDICATORI_INIZIALI_REPARTI = {
+  'Produzione / Linea': { giorniSenzaInfortuni: 142, livelloQualita: 98.2, infortuniAnno: 0 },
+  'Ufficio Tecnico / Progettazione': { giorniSenzaInfortuni: 310, livelloQualita: 99.1, infortuniAnno: 0 },
+  'Logistica / Magazzino': { giorniSenzaInfortuni: 196, livelloQualita: 97.8, infortuniAnno: 0 },
+  'Qualità & Collaudo': { giorniSenzaInfortuni: 280, livelloQualita: 99.4, infortuniAnno: 0 },
+  Manutenzione: { giorniSenzaInfortuni: 165, livelloQualita: 98.0, infortuniAnno: 0 },
+  'Amministrazione / Acquisti / HR': { giorniSenzaInfortuni: 420, livelloQualita: 99.5, infortuniAnno: 0 },
+  'Altro Reparto': { giorniSenzaInfortuni: 120, livelloQualita: 98.0, infortuniAnno: 0 },
+};
+
+const TIPI_SEGNALAZIONE_QUALITA = [
+  'Difetto ripetitivo',
+  'Qualità / Miglioramento',
+  'Sicurezza / Quasi-infortunio',
+];
+
+const STATI_SEGNALAZIONE = ['Da verificare', 'In lavorazione', 'Risolto'];
+
 const SUONERIE = [
   { id: 'chime', label: 'Trillo Gentile' },
   { id: 'pop', label: 'Pop Veloce' },
@@ -522,20 +540,43 @@ export default function App() {
     if (!vid) return;
 
     vid.muted = introMuted;
-    const playPromise = vid.play();
-    if (playPromise && typeof playPromise.then === 'function') {
-      playPromise
-        .then(() => {
+    vid.volume = 1.0;
+
+    const tryPlay = () => {
+      const p = vid.play();
+      if (p && typeof p.then === 'function') {
+        p.then(() => {
           setIntroAudioBlockedNotice(false);
-        })
-        .catch(() => {
+        }).catch(() => {
           if (!introMuted) {
+            setIntroAudioBlockedNotice(true);
             vid.muted = true;
             vid.play().catch(() => {});
-            setIntroAudioBlockedNotice(true);
           }
         });
-    }
+      }
+    };
+
+    tryPlay();
+
+    const unlockOnFirstInteraction = () => {
+      if (!introMuted && introVideoRef.current) {
+        introVideoRef.current.muted = false;
+        introVideoRef.current.volume = 1.0;
+        introVideoRef.current.play().catch(() => {});
+        setIntroAudioBlockedNotice(false);
+      }
+      window.removeEventListener('pointerdown', unlockOnFirstInteraction);
+      window.removeEventListener('touchstart', unlockOnFirstInteraction);
+    };
+
+    window.addEventListener('pointerdown', unlockOnFirstInteraction, { once: true });
+    window.addEventListener('touchstart', unlockOnFirstInteraction, { once: true });
+
+    return () => {
+      window.removeEventListener('pointerdown', unlockOnFirstInteraction);
+      window.removeEventListener('touchstart', unlockOnFirstInteraction);
+    };
   }, [showIntroVideo, introMuted]);
 
   function segnaIntroPerAggiornamento() {
@@ -1059,6 +1100,7 @@ export default function App() {
         setAnnuncioDaEliminare(null);
         setChatAperta(null);
         setUtenteDaValutare(null);
+        setRepartoInModificaKpi(null);
         setSchedaAnnuncio(null);
       }
     };
@@ -1355,7 +1397,7 @@ export default function App() {
     if (settings.notificheAttive) {
       playNotificationSound(settings.suoneria);
       sendSystemNotification(
-        `Preferito venduto • ${COMPANY_NAME} ${COMPANY_SUBTITLE}`,
+        'Preferito venduto • TRACOLLEGHI Market',
         nuoviVenduti.length === 1
           ? `"${primo.titolo}" è ora VENDUTO.`
           : `${nuoviVenduti.length} tuoi preferiti sono stati venduti.`,
@@ -1670,7 +1712,7 @@ export default function App() {
         setSettings((prev) => ({ ...prev, notificheAttive: true }));
         if (mostraFeedback) {
           await sendSystemNotification(
-            `${COMPANY_NAME} ${COMPANY_SUBTITLE}`,
+            'TRACOLLEGHI Market',
             'Notifiche attive! Riceverai qui i messaggi dei tuoi colleghi.',
             'tracolleghi-test'
           );
@@ -1678,7 +1720,7 @@ export default function App() {
           setTimeout(() => setAvviso(''), 3000);
         }
       } else if (mostraFeedback && res === 'denied') {
-        setErrore('Notifiche bloccate dal browser: abilitale nelle impostazioni del telefono.');
+        setErrore('Notifiche bloccate dal browser: abilitale nelle impostazioni del telefono per TRACOLLEGHI Market.');
       }
     } catch {
       // Silenzioso
@@ -2465,6 +2507,13 @@ export default function App() {
             src="/intro-tracolleghi.mp4"
             autoPlay
             playsInline
+            onCanPlay={(e) => {
+              e.currentTarget.muted = introMuted;
+              e.currentTarget.volume = 1.0;
+              if (!introMuted) {
+                e.currentTarget.play().catch(() => {});
+              }
+            }}
             onEnded={chiudiIntroVideo}
             onError={chiudiIntroVideo}
             style={{
@@ -2566,13 +2615,13 @@ export default function App() {
             padding-right: 24px;
           }
         }
-        /* HEADER PIENO CON SAFE AREA IN ALTO PER NON ESSERE COPERTO DAL TELEFONO */
+        /* HEADER LUMINOSO AD ALTO CONTRASTO CON LINEA PULSAR */
         .tm-top-header {
           background: #ffffff;
           position: sticky;
           top: 0;
           z-index: 40;
-          padding-top: env(safe-area-inset-top);
+          padding-top: calc(env(safe-area-inset-top) + 12px);
           box-shadow: 0 4px 20px rgba(15, 23, 42, 0.06);
         }
         .tm-top-header::after {
@@ -2736,6 +2785,7 @@ export default function App() {
           padding-top: 14px;
           padding-bottom: 92px;
         }
+        /* CARD AD ALTO CONTRASTO CON ACCENTI BLU/CIANO */
         .tm-grid-v {
           display: grid;
           grid-template-columns: repeat(2, 1fr);
@@ -2881,6 +2931,11 @@ export default function App() {
           box-shadow: 0 3px 10px rgba(16, 185, 129, 0.35);
           animation: tm-pop-check 0.25s ease-out;
         }
+        .tm-kpi-summary {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(165px, 1fr));
+          gap: 12px;
+        }
         .tm-rep-grid {
           display: grid;
           grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
@@ -2897,13 +2952,16 @@ export default function App() {
             grid-template-columns: 1fr;
           }
         }
+        /* BARRA DI NAVIGAZIONE INFERIORE FISSA */
         .tm-bottom-nav {
           position: fixed;
           bottom: 0;
           left: 0;
           right: 0;
           height: 64px;
-          background: #ffffff;
+          background: rgba(255, 255, 255, 0.96);
+          backdrop-filter: blur(12px);
+          -webkit-backdrop-filter: blur(12px);
           border-top: 1.5px solid #e2e8f0;
           display: grid;
           grid-template-columns: repeat(5, 1fr);
@@ -2946,10 +3004,13 @@ export default function App() {
           cursor: pointer;
           box-shadow: 0 6px 18px rgba(6, 182, 212, 0.4);
         }
+        /* MENU RAPIDO A COMPARSA (ALTRO) */
         .tm-more-backdrop {
           position: fixed;
           inset: 0;
           background: rgba(15, 23, 42, 0.48);
+          backdrop-filter: blur(6px);
+          -webkit-backdrop-filter: blur(6px);
           z-index: 65;
           display: flex;
           align-items: flex-end;
@@ -3011,6 +3072,7 @@ export default function App() {
         }
       `}</style>
 
+      {/* AVVISO DISCRETO NUOVA VERSIONE DISPONIBILE (SERVICE WORKER) */}
       {swUpdateAvailable && !swBannerDismissed && (
         <div
           role="status"
@@ -3074,6 +3136,7 @@ export default function App() {
         </div>
       )}
 
+      {/* HEADER LUMINOSO AD ALTO CONTRASTO CON PANNELLO PROFILO BADGE INTEGRATO NELL'ICONA A SINISTRA */}
       <header className="tm-top-header">
         <div className="tm-container">
           <div className="tm-header-top-row">
@@ -3095,8 +3158,8 @@ export default function App() {
               >
                 <div className="tm-brand-logo-wrap">
                   <img
-                    src={COMPANY_LOGO}
-                    alt={`${COMPANY_NAME} ${COMPANY_SUBTITLE}`}
+                    src="/icona-tracolleghi.jpg"
+                    alt="{COMPANY_NAME} {COMPANY_SUBTITLE}"
                     className="tm-brand-logo"
                     onError={(e) => {
                       e.currentTarget.style.display = 'none';
@@ -3104,11 +3167,11 @@ export default function App() {
                   />
                 </div>
                 <div className="tm-brand-text-col">
-                  <div className="tm-brand-name">{COMPANY_NAME}</div>
+                  <div className="tm-brand-name">TRACOLLEGHI</div>
                   <div className="tm-brand-market-row">
                     <span className="tm-brand-sub">
                       <span className="tm-live-dot" />
-                      {COMPANY_SUBTITLE}
+                      MARKET
                     </span>
                   </div>
                 </div>
@@ -3288,6 +3351,7 @@ export default function App() {
             />
           </div>
 
+          {/* Pillole filtro per Bacheca */}
           {sezioneAttiva === 'bacheca' && (
             <div className="tm-filter-strip">
               {MACRO_CATEGORIE.map((cat) => (
@@ -3320,6 +3384,7 @@ export default function App() {
             </div>
           )}
 
+          {/* Pillole filtro per Cerco / Aiuto */}
           {sezioneAttiva === 'cerco_aiuto' && (
             <div className="tm-filter-strip">
               {SOTTOCATEGORIE_CERCO_AIUTO.map((sub) => (
@@ -3335,6 +3400,7 @@ export default function App() {
             </div>
           )}
 
+          {/* Pillole filtro per Convenzioni */}
           {sezioneAttiva === 'convenzioni' && (
             <div className="tm-filter-strip">
               {['Tutte', 'Food & Pausa', 'Auto & Moto', 'Sport & Benessere', 'Negozi & Servizi'].map((cat) => (
@@ -3350,6 +3416,7 @@ export default function App() {
             </div>
           )}
 
+          {/* Pillole filtro per Eventi di Zona */}
           {sezioneAttiva === 'eventi' && (
             <div className="tm-filter-strip">
               <button
@@ -3374,6 +3441,7 @@ export default function App() {
         </div>
       </header>
 
+      {/* CONTENUTO PRINCIPALE */}
       <main className="tm-container tm-board-wrapper">
         {showInstallBanner && (
           <div
@@ -3451,6 +3519,7 @@ export default function App() {
           </div>
         )}
 
+        {/* SEZIONE BACHECA (GRIGLIA 4:5) */}
         {sezioneAttiva === 'bacheca' && (
           <section className="tm-grid-v">
             {annunciFiltrati.length === 0 ? (
@@ -3475,6 +3544,7 @@ export default function App() {
           </section>
         )}
 
+        {/* SEZIONE CERCO / AIUTO */}
         {sezioneAttiva === 'cerco_aiuto' && (
           <section className="tm-grid-v">
             {postCercoAiutoFiltrati.length === 0 ? (
@@ -3497,6 +3567,7 @@ export default function App() {
           </section>
         )}
 
+        {/* SEZIONE CONVENZIONI */}
         {sezioneAttiva === 'convenzioni' && (
           <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '14px' }}>
             {convenzioniFiltrate.map((conv) => {
@@ -3579,6 +3650,7 @@ export default function App() {
           </section>
         )}
 
+        {/* SEZIONE EVENTI DI ZONA */}
         {sezioneAttiva === 'eventi' && (
           <section style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             {showEventoForm && (
@@ -3768,6 +3840,7 @@ export default function App() {
           </section>
         )}
 
+        {/* SEZIONE PAUSA GIOCO */}
         {sezioneAttiva === 'gioco' && (
           <section style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             <div className="tm-game-layout">
@@ -3920,6 +3993,7 @@ export default function App() {
           </section>
         )}
 
+        {/* SEZIONE CHAT */}
         {sezioneAttiva === 'chat' && (
           <section style={{ background: '#ffffff', borderRadius: '16px', padding: '16px', border: '1.5px solid #e2e8f0' }}>
             <h2 style={{ margin: '0 0 12px', fontFamily: fontHeading, fontSize: '1.08rem', color: '#0f172a' }}>
@@ -3998,6 +4072,7 @@ export default function App() {
         )}
       </main>
 
+      {/* BARRA DI NAVIGAZIONE INFERIORE FISSA */}
       <nav className="tm-bottom-nav" aria-label="Navigazione principale">
         <button
           type="button"
@@ -4075,6 +4150,7 @@ export default function App() {
         </button>
       </nav>
 
+      {/* MENU RAPIDO A COMPARSA (CONVENZIONI, REPARTI & QUALITÀ, PAUSA GIOCO, IMPOSTAZIONI ⚙️, ADMIN SOLO SE AUTORIZZATO) */}
       {showMoreMenu && (
         <div className="tm-more-backdrop" onClick={() => setShowMoreMenu(false)}>
           <div className="tm-more-sheet" onClick={(e) => e.stopPropagation()}>
@@ -4117,7 +4193,7 @@ export default function App() {
                       setSezioneAttiva(sez.id);
                       setShowMoreMenu(false);
                       if (sez.id === 'gioco') fetchClassificaGioco();
-                    }}
+                                          }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
                       <span className="tm-more-icon">{sez.icon}</span>
@@ -4137,6 +4213,7 @@ export default function App() {
                 );
               })}
 
+              {/* Rotella Impostazioni spostata qui dentro Altro */}
               <button
                 type="button"
                 className="tm-more-item"
@@ -4160,6 +4237,7 @@ export default function App() {
                 <span style={{ color: '#94a3b8', fontWeight: 800, fontSize: '1rem' }}>›</span>
               </button>
 
+              {/* Voce Admin visibile SOLO all'amministratore */}
               {canSeeAdminOption && (
                 <button
                   type="button"
@@ -4190,6 +4268,7 @@ export default function App() {
         </div>
       )}
 
+      {/* MODALE ADMIN & IMPORTAZIONE MASSIVA BADGE */}
       {showAdminModal && (
         <div
           onClick={() => setShowAdminModal(false)}
@@ -4299,6 +4378,7 @@ export default function App() {
               </form>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                {/* Tab interne Admin */}
                 <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                     <button
@@ -4368,6 +4448,7 @@ export default function App() {
                   </button>
                 </div>
 
+                {/* TAB 1: IMPORTAZIONE MASSIVA */}
                 {adminTab === 'importa' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     <div
@@ -4508,6 +4589,7 @@ export default function App() {
                   </div>
                 )}
 
+                {/* TAB 2: ELENCO BADGE + AGGIUNTA SINGOLA */}
                 {adminTab === 'elenco' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     <form
@@ -4664,6 +4746,7 @@ export default function App() {
                   </div>
                 )}
 
+                {/* TAB 3: REGOLE & PIN */}
                 {adminTab === 'sicurezza' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     <div
@@ -4748,6 +4831,7 @@ export default function App() {
         </div>
       )}
 
+      {/* MODALE SCHEDA DETTAGLIO ANNUNCIO / RICHIESTA */}
       {schedaAnnuncio && (() => {
         const { item, isCercoAiutoCard } = schedaAnnuncio;
         const foto = normalizeImages(item);
@@ -4867,6 +4951,7 @@ export default function App() {
         );
       })()}
 
+      {/* MODALE PUBBLICA ANNUNCIO / RICHIESTA CON MACCHINA FOTOGRAFICA IN ALTO */}
       {showPublishModal && (
         <div
           onClick={() => setShowPublishModal(false)}
@@ -4911,6 +4996,7 @@ export default function App() {
             )}
 
             <form onSubmit={handleSubmitAnnuncio} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {/* MACCHINA FOTOGRAFICA IN ALTO CLICCABILE PER INSERIRE FOTO */}
               <div>
                 <label
                   style={{
@@ -4979,6 +5065,7 @@ export default function App() {
                 )}
               </div>
 
+              {/* TUTTI GLI ALTRI CAMPI SOTTO LA MACCHINA FOTOGRAFICA */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 700, marginBottom: '4px' }}>Categoria</label>
@@ -5107,6 +5194,7 @@ export default function App() {
         </div>
       )}
 
+      {/* MODALE IMPOSTAZIONI & GESTIONE ANNUNCI */}
       {showSettingsModal && (
         <div
           onClick={() => setShowSettingsModal(false)}
@@ -5299,6 +5387,7 @@ export default function App() {
         </div>
       )}
 
+      {/* MODALE MODIFICA ANNUNCIO */}
       {annuncioInModifica && (
         <div
           onClick={() => setAnnuncioInModifica(null)}
@@ -5389,6 +5478,7 @@ export default function App() {
         </div>
       )}
 
+      {/* MODALE CONFERMA ELIMINAZIONE */}
       {annuncioDaEliminare && (
         <div
           onClick={() => setAnnuncioDaEliminare(null)}
@@ -5422,6 +5512,7 @@ export default function App() {
         </div>
       )}
 
+      {/* MODALE CHAT PRIVATA */}
       {chatAperta && (
         <div
           onClick={() => setChatAperta(null)}
@@ -5509,6 +5600,7 @@ export default function App() {
         </div>
       )}
 
+      {/* MODALE VALUTAZIONE STELLE COLLEGA */}
       {utenteDaValutare && (
         <div
           onClick={() => setUtenteDaValutare(null)}
@@ -5553,6 +5645,73 @@ export default function App() {
                 </button>
                 <button type="submit" disabled={invioValutazione} style={{ padding: '8px 15px', borderRadius: '10px', border: 'none', background: '#2563eb', color: '#fff', fontFamily: fontHeading, fontWeight: 800, cursor: 'pointer' }}>
                   {invioValutazione ? 'Invio...' : 'Salva'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODALE AGGIORNA KPI REPARTO */}
+      {repartoInModificaKpi && (
+        <div
+          onClick={() => setRepartoInModificaKpi(null)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(15, 23, 42, 0.56)',
+            backdropFilter: 'blur(6px)',
+            WebkitBackdropFilter: 'blur(6px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px',
+            zIndex: 85,
+          }}
+        >
+          <div onClick={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: '20px', padding: '20px', width: '100%', maxWidth: '400px' }}>
+            <h3 style={{ margin: '0 0 12px', fontFamily: fontHeading, fontSize: '1.05rem', color: '#0f172a' }}>
+              KPI • {repartoInModificaKpi}
+            </h3>
+            <form onSubmit={handleSalvaKpiReparto} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 700, marginBottom: '4px' }}>Giorni senza infortuni</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={kpiEditForm.giorniSenzaInfortuni}
+                  onChange={(e) => setKpiEditForm((prev) => ({ ...prev, giorniSenzaInfortuni: e.target.value }))}
+                  style={{ width: '100%', boxSizing: 'border-box', padding: '9px 11px', borderRadius: '10px', border: '1px solid #cbd5e1' }}
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 700, marginBottom: '4px' }}>Livello qualità (%)</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  max="100"
+                  value={kpiEditForm.livelloQualita}
+                  onChange={(e) => setKpiEditForm((prev) => ({ ...prev, livelloQualita: e.target.value }))}
+                  style={{ width: '100%', boxSizing: 'border-box', padding: '9px 11px', borderRadius: '10px', border: '1px solid #cbd5e1' }}
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 700, marginBottom: '4px' }}>Infortuni registrati</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={kpiEditForm.infortuniAnno}
+                  onChange={(e) => setKpiEditForm((prev) => ({ ...prev, infortuniAnno: e.target.value }))}
+                  style={{ width: '100%', boxSizing: 'border-box', padding: '9px 11px', borderRadius: '10px', border: '1px solid #cbd5e1' }}
+                />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '4px' }}>
+                <button type="button" onClick={() => setRepartoInModificaKpi(null)} style={{ padding: '8px 13px', borderRadius: '10px', border: '1px solid #cbd5e1', background: '#fff', fontWeight: 700, cursor: 'pointer' }}>
+                  Annulla
+                </button>
+                <button type="submit" style={{ padding: '8px 15px', borderRadius: '10px', border: 'none', background: '#0f172a', color: '#fff', fontFamily: fontHeading, fontWeight: 800, cursor: 'pointer' }}>
+                  Salva KPI
                 </button>
               </div>
             </form>
