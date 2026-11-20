@@ -1629,6 +1629,13 @@ export default function App() {
   function apriModaleValutaUtente(nomeCollega) {
     if (!userProfile.registrato || !userProfile.nome.trim()) {
       setErrore('Registrati prima con Badge o Email aziendale per lasciare una valutazione con stelle.');
+      setAuthForm({
+        nome: userProfile.nome || '',
+        badge: userProfile.badge || '',
+        email: userProfile.email || '',
+        reparto: userProfile.reparto || REPARTI_AZIENDA[0],
+        fotoProfilo: userProfile.fotoProfilo || '',
+      });
       setShowProfileModal(true);
       return;
     }
@@ -2306,6 +2313,13 @@ export default function App() {
   function apriChatPrivata(annuncio, altroUtente) {
     if (!userProfile.registrato || !userProfile.nome.trim()) {
       setErrore('Registrati prima con Badge o Email aziendale per avviare una chat privata.');
+      setAuthForm({
+        nome: userProfile.nome || '',
+        badge: userProfile.badge || '',
+        email: userProfile.email || '',
+        reparto: userProfile.reparto || REPARTI_AZIENDA[0],
+        fotoProfilo: userProfile.fotoProfilo || '',
+      });
       setShowProfileModal(true);
       return;
     }
@@ -2632,35 +2646,6 @@ export default function App() {
             font-size: 0.74rem;
             padding: 3px 10px;
           }
-        }
-        .tm-header-actions {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          flex-shrink: 0;
-        }
-        .tm-icon-btn {
-          height: 36px;
-          border-radius: 11px;
-          border: 1.5px solid #cbd5e1;
-          background: #ffffff;
-          color: #0f172a;
-          font-family: ${fontBody};
-          font-size: 0.78rem;
-          font-weight: 800;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          gap: 6px;
-          padding: 0 11px;
-          cursor: pointer;
-          white-space: nowrap;
-          box-shadow: 0 2px 6px rgba(15, 23, 42, 0.04);
-          transition: all 0.18s ease;
-        }
-        .tm-icon-btn:hover {
-          border-color: #2563eb;
-          box-shadow: 0 4px 12px rgba(37, 99, 235, 0.14);
         }
         .tm-search-row {
           padding-bottom: 8px;
@@ -3230,44 +3215,6 @@ export default function App() {
                   </form>
                 </div>
               )}
-            </div>
-
-            <div className="tm-header-actions">
-              <button
-                type="button"
-                className="tm-icon-btn"
-                onClick={() => {
-                  setErrore('');
-                  setAuthForm({
-                    nome: userProfile.nome || '',
-                    badge: userProfile.badge || '',
-                    email: userProfile.email || '',
-                    reparto: userProfile.reparto || REPARTI_AZIENDA[0],
-                    fotoProfilo: userProfile.fotoProfilo || '',
-                  });
-                  setShowProfileModal((prev) => !prev);
-                }}
-              >
-                {userProfile.fotoProfilo ? (
-                  <img
-                    src={userProfile.fotoProfilo}
-                    alt={userProfile.nome || 'Profilo'}
-                    style={{ width: '21px', height: '21px', borderRadius: '50%', objectFit: 'cover' }}
-                  />
-                ) : (
-                  <span>🪪</span>
-                )}
-                <span>
-                  {userProfile.registrato && userProfile.nome
-                    ? extractBaseName(userProfile.nome).split(' ')[0]
-                    : 'Badge'}
-                </span>
-                {userProfile.badgeVerificato && (
-                  <span title="Badge verificato" style={{ color: '#059669', fontWeight: 900 }}>
-                    ✓
-                  </span>
-                )}
-              </button>
             </div>
           </div>
 
@@ -3994,7 +3941,16 @@ export default function App() {
                 </p>
                 <button
                   type="button"
-                  onClick={() => setShowProfileModal(true)}
+                  onClick={() => {
+                    setAuthForm({
+                      nome: userProfile.nome || '',
+                      badge: userProfile.badge || '',
+                      email: userProfile.email || '',
+                      reparto: userProfile.reparto || REPARTI_AZIENDA[0],
+                      fotoProfilo: userProfile.fotoProfilo || '',
+                    });
+                    setShowProfileModal(true);
+                  }}
                   style={{
                     background: '#2563eb',
                     color: '#fff',
@@ -4930,7 +4886,7 @@ export default function App() {
         );
       })()}
 
-      {/* MODALE PUBBLICA ANNUNCIO / RICHIESTA */}
+      {/* MODALE PUBBLICA ANNUNCIO / RICHIESTA CON MACCHINA FOTOGRAFICA IN ALTO */}
       {showPublishModal && (
         <div
           onClick={() => setShowPublishModal(false)}
@@ -4974,7 +4930,77 @@ export default function App() {
               </div>
             )}
 
-            <form onSubmit={handleSubmitAnnuncio} style={{ display: 'flex', flexDirection: 'column', gap: '11px' }}>
+            <form onSubmit={handleSubmitAnnuncio} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {/* MACCHINA FOTOGRAFICA IN ALTO CLICCABILE PER INSERIRE FOTO */}
+              <div>
+                <label
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    minHeight: '116px',
+                    borderRadius: '16px',
+                    border: '2px dashed #06b6d4',
+                    background: 'linear-gradient(135deg, #f0f9ff 0%, #ecfeff 100%)',
+                    color: '#0f172a',
+                    cursor: 'pointer',
+                    padding: '14px',
+                    textAlign: 'center',
+                  }}
+                >
+                  <span style={{ fontSize: '2.1rem', lineHeight: 1 }}>📷</span>
+                  <span style={{ fontFamily: fontHeading, fontWeight: 800, fontSize: '0.88rem' }}>
+                    Tocca la macchina fotografica per aggiungere foto ({fotoAnnuncio.length}/4)
+                  </span>
+                  <span style={{ fontSize: '0.74rem', color: '#0284c7', fontWeight: 700 }}>
+                    Scatta o scegli fino a 4 immagini
+                  </span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    multiple
+                    onChange={handleFotoAnnuncioChange}
+                    style={{ display: 'none' }}
+                  />
+                </label>
+
+                {fotoAnnuncio.length > 0 && (
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '10px' }}>
+                    {fotoAnnuncio.map((src, idx) => (
+                      <div key={idx} style={{ position: 'relative' }}>
+                        <img src={src} alt={`Anteprima ${idx + 1}`} style={{ width: '68px', height: '68px', borderRadius: '10px', objectFit: 'cover', border: '1px solid #cbd5e1' }} />
+                        <button
+                          type="button"
+                          onClick={() => removeFotoAnnuncio(idx)}
+                          style={{
+                            position: 'absolute',
+                            top: '-6px',
+                            right: '-6px',
+                            width: '20px',
+                            height: '20px',
+                            borderRadius: '50%',
+                            border: 'none',
+                            background: '#dc2626',
+                            color: '#fff',
+                            fontSize: '0.7rem',
+                            fontWeight: 800,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* TUTTI GLI ALTRI CAMPI SOTTO LA MACCHINA FOTOGRAFICA */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 700, marginBottom: '4px' }}>Categoria</label>
@@ -5080,57 +5106,6 @@ export default function App() {
                   required
                   style={{ width: '100%', boxSizing: 'border-box', padding: '9px 11px', borderRadius: '10px', border: '1px solid #cbd5e1' }}
                 />
-              </div>
-
-              <div>
-                <label
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    background: '#f1f5f9',
-                    border: '1px dashed #94a3b8',
-                    borderRadius: '10px',
-                    padding: '7px 11px',
-                    fontSize: '0.8rem',
-                    fontWeight: 700,
-                    color: '#0f172a',
-                    cursor: 'pointer',
-                  }}
-                >
-                  📷 Foto ({fotoAnnuncio.length}/4)
-                  <input type="file" accept="image/*" multiple onChange={handleFotoAnnuncioChange} style={{ display: 'none' }} />
-                </label>
-
-                {fotoAnnuncio.length > 0 && (
-                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '8px' }}>
-                    {fotoAnnuncio.map((src, idx) => (
-                      <div key={idx} style={{ position: 'relative' }}>
-                        <img src={src} alt={`Anteprima ${idx + 1}`} style={{ width: '64px', height: '64px', borderRadius: '8px', objectFit: 'cover' }} />
-                        <button
-                          type="button"
-                          onClick={() => removeFotoAnnuncio(idx)}
-                          style={{
-                            position: 'absolute',
-                            top: '-6px',
-                            right: '-6px',
-                            width: '18px',
-                            height: '18px',
-                            borderRadius: '50%',
-                            border: 'none',
-                            background: '#dc2626',
-                            color: '#fff',
-                            fontSize: '0.68rem',
-                            fontWeight: 800,
-                            cursor: 'pointer',
-                          }}
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
               </div>
 
               <button
