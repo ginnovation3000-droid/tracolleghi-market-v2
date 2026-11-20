@@ -7,6 +7,9 @@ const SUPABASE_KEY = 'sb_publishable_YQvIcQl-DbTD48tlMuIdGA_5EmW-fW_';
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
+// PIN predefinito per sbloccare l'area Admin (modificabile nelle impostazioni Admin)
+const DEFAULT_ADMIN_PIN = '2026';
+
 const SEZIONI_EXTRA = [
   {
     id: 'convenzioni',
@@ -173,6 +176,103 @@ const BERSAGLI_GIOCO = [
 
 function extractBaseName(value) {
   return String(value || '').split(' • ')[0].trim();
+}
+
+function normalizeBadgeCode(value) {
+  return String(value || '')
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, '');
+}
+
+function normalizeRepartoMatch(rawReparto) {
+  const clean = String(rawReparto || '').trim().toLowerCase();
+  if (!clean) return REPARTI_AZIENDA[0];
+  const exact = REPARTI_AZIENDA.find((r) => r.toLowerCase() === clean);
+  if (exact) return exact;
+  const partial = REPARTI_AZIENDA.find(
+    (r) => r.toLowerCase().includes(clean) || clean.includes(r.split('/')[0].trim().toLowerCase())
+  );
+  return partial || REPARTI_AZIENDA[0];
+}
+
+// Parser intelligente per elenco massivo badge (supporta CSV con ; o , o TAB o righe libere)
+function parseBulkBadgeText(rawText, defaultReparto = REPARTI_AZIENDA[0]) {
+  const lines = String(rawText || '')
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+  const parsed = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const sep = line.includes(';') ? ';' : line.includes('\t') ? '\t' : ',';
+    const cols = line
+      .split(sep)
+      .map((c) => c.replace(/^["']|["']$/g, '').trim())
+      .filter((c, idx) => idx < 4);
+
+    if (cols.length === 0) continue;
+
+    // Salta eventuale riga intestazione CSV
+    const firstLower = cols[0].toLowerCase();
+    const secondLower = (cols[1] || '').toLowerCase();
+    if (
+      i === 0 &&
+      (firstLower === 'badge' ||
+        firstLower === 'matricola' ||
+        firstLower === 'codice' ||
+        firstLower === 'nome' ||
+        secondLower === 'badge' ||
+        secondLower === 'matricola')
+    ) {
+      continue;
+    }
+
+    let badge = '';
+    let nome = '';
+    let reparto = defaultReparto;
+    let email = '';
+
+    if (cols.length === 1) {
+      badge = normalizeBadgeCode(cols[0]);
+    } else {
+      const c0 = cols[0];
+      const c1 = cols[1] || '';
+      const c2 = cols[2] || '';
+      const c3 = cols[3] || '';
+
+      // Riconosce automaticamente se la prima colonna è il codice badge o il Nome Cognome
+      const c0LooksLikeBadge = /^[a-z0-9\-_.]{1,16}$/i.test(c0) && /\d/.test(c0);
+      if (c0LooksLikeBadge) {
+        badge = normalizeBadgeCode(c0);
+        nome = extractBaseName(c1);
+      } else {
+        nome = extractBaseName(c0);
+        badge = normalizeBadgeCode(c1);
+      }
+
+      if (c2) {
+        if (c2.includes('@')) email = c2.toLowerCase();
+        else reparto = normalizeRepartoMatch(c2);
+      }
+      if (c3) {
+        if (c3.includes('@')) email = c3.toLowerCase();
+        else if (!c2 || c2.includes('@')) reparto = normalizeRepartoMatch(c3);
+      }
+    }
+
+    if (!badge) continue;
+    parsed.push({
+      badge,
+      nome: nome || `Collega #${badge}`,
+      reparto: reparto || defaultReparto,
+      email,
+      attivo: true,
+    });
+  }
+
+  return parsed;
 }
 
 function playNotificationSound(soundId = 'chime') {
@@ -473,6 +573,7 @@ export default function App() {
           reparto: REPARTI_AZIENDA[0],
           fotoProfilo: '',
           registrato: false,
+          badgeVerificato: false,
         }
       );
     } catch {
@@ -483,6 +584,7 @@ export default function App() {
         reparto: REPARTI_AZIENDA[0],
         fotoProfilo: '',
         registrato: false,
+        badgeVerificato: false,
       };
     }
   });
@@ -495,6 +597,101 @@ export default function App() {
     fotoProfilo: userProfile.fotoProfilo || '',
   });
   const [showProfileModal, setShowProfileModal] = useState(false);
+
+  // --- STATO ADMIN & IMPORTAZIONE MASSIVA BADGE ---
+  const [isAdminUnlocked, setIsAdminUnlocked] = useState(() => {
+    try {
+      return sessionStorage.getItem('tracolleghi_admin_unlocked') === '1';
+    } catch {
+      return false;
+    }
+  });
+  const [adminPin, setAdminPin] = useState(() => {
+    try {
+      return localStorage.getItem('tracolleghi_admin_pin_v1') || DEFAULT_ADMIN_PIN;
+    } catch {
+      return DEFAULT_ADMIN_PIN;
+    }
+  });
+  const [adminPinInput, setAdminPinInput] = useState('');
+  const [newAdminPinInput, setNewAdminPinInput] = useState('');
+  const [showAdminModal, setShowAdminModal] = useState(false);
+  const [adminTab, setAdminTab] = useState('importa'); // 'importa' | 'elenco' | 'sicurezza'
+  const [badgeRegistry, setBadgeRegistry] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('tracolleghi_badge_registry_v1'));
+      return Array.isArray(saved) ? saved : [];
+    } catch {
+      return [];
+    }
+  });
+  const [strictBadgeCheck, setStrictBadgeCheck] = useState(() => {
+    try {
+      return localStorage.getItem('tracolleghi_strict_badge_v1') === '1';
+    } catch {
+      return false;
+    }
+  });
+  const [bulkBadgeText, setBulkBadgeText] = useState('');
+  const [bulkDefaultReparto, setBulkDefaultReparto] = useState(REPARTI_AZIENDA[0]);
+  const [bulkReplaceMode, setBulkReplaceMode] = useState(false);
+  const [singleBadgeForm, setSingleBadgeForm] = useState({
+    badge: '',
+    nome: '',
+    reparto: REPARTI_AZIENDA[0],
+    email: '',
+  });
+  const [adminSearchBadge, setAdminSearchBadge] = useState('');
+  const [adminLoadingImport, setAdminLoadingImport] = useState(false);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('tracolleghi_badge_registry_v1', JSON.stringify(badgeRegistry));
+    } catch {}
+  }, [badgeRegistry]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('tracolleghi_strict_badge_v1', strictBadgeCheck ? '1' : '0');
+    } catch {}
+  }, [strictBadgeCheck]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('tracolleghi_admin_pin_v1', adminPin);
+    } catch {}
+  }, [adminPin]);
+
+  const bulkPreviewList = useMemo(
+    () => parseBulkBadgeText(bulkBadgeText, bulkDefaultReparto),
+    [bulkBadgeText, bulkDefaultReparto]
+  );
+
+  const filteredBadgeRegistry = useMemo(() => {
+    const q = adminSearchBadge.trim().toLowerCase();
+    if (!q) return badgeRegistry;
+    return badgeRegistry.filter(
+      (b) =>
+        (b.badge || '').toLowerCase().includes(q) ||
+        (b.nome || '').toLowerCase().includes(q) ||
+        (b.reparto || '').toLowerCase().includes(q) ||
+        (b.email || '').toLowerCase().includes(q)
+    );
+  }, [badgeRegistry, adminSearchBadge]);
+
+  async function fetchBadgeRegistry() {
+    try {
+      const { data, error } = await supabase
+        .from('badge_autorizzati')
+        .select('*')
+        .order('badge', { ascending: true });
+      if (!error && Array.isArray(data) && data.length > 0) {
+        setBadgeRegistry(data);
+      }
+    } catch {
+      // Fallback silenzioso su localStorage se la tabella non esiste ancora su Supabase
+    }
+  }
 
   // Modale Pubblica Annuncio / Richiesta
   const [showPublishModal, setShowPublishModal] = useState(false);
@@ -729,6 +926,7 @@ export default function App() {
         setShowPublishModal(false);
         setShowProfileModal(false);
         setShowSettingsModal(false);
+        setShowAdminModal(false);
         setAnnuncioInModifica(null);
         setAnnuncioDaEliminare(null);
         setChatAperta(null);
@@ -746,11 +944,210 @@ export default function App() {
     fetchValutazioni();
     fetchClassificaGioco();
     fetchSegnalazioniQualita();
+    fetchBadgeRegistry();
     const timerAnnunci = setInterval(() => {
       fetchAnnunci();
     }, 10000);
     return () => clearInterval(timerAnnunci);
   }, []);
+
+  // --- FUNZIONI ADMIN & IMPORTAZIONE MASSIVA BADGE ---
+  function handleUnlockAdmin(e) {
+    e.preventDefault();
+    if (adminPinInput.trim() === adminPin) {
+      setIsAdminUnlocked(true);
+      setAdminPinInput('');
+      setErrore('');
+      try {
+        sessionStorage.setItem('tracolleghi_admin_unlocked', '1');
+      } catch {}
+    } else {
+      setErrore('PIN Admin non corretto.');
+    }
+  }
+
+  function handleLockAdmin() {
+    setIsAdminUnlocked(false);
+    try {
+      sessionStorage.removeItem('tracolleghi_admin_unlocked');
+    } catch {}
+  }
+
+  function handleUpdateAdminPin(e) {
+    e.preventDefault();
+    const clean = newAdminPinInput.trim();
+    if (clean.length < 4) {
+      setErrore('Il nuovo PIN Admin deve contenere almeno 4 caratteri.');
+      return;
+    }
+    setAdminPin(clean);
+    setNewAdminPinInput('');
+    setAvviso('PIN Admin aggiornato correttamente.');
+    setTimeout(() => setAvviso(''), 2500);
+  }
+
+  async function handleCsvFileImport(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      setBulkBadgeText((prev) => (prev.trim() ? `${prev.trim()}\n${text.trim()}` : text.trim()));
+      setAvviso(`File "${file.name}" letto: controlla l'anteprima qui sotto e clicca Importa.`);
+      setTimeout(() => setAvviso(''), 3500);
+    } catch {
+      setErrore('Impossibile leggere il file selezionato. Usa un file .csv o .txt oppure incolla i dati.');
+    }
+    e.target.value = '';
+  }
+
+  async function handleConfirmBulkBadgeImport() {
+    if (bulkPreviewList.length === 0) {
+      setErrore('Nessun badge valido rilevato. Inserisci almeno un codice badge per riga.');
+      return;
+    }
+    setAdminLoadingImport(true);
+    setErrore('');
+
+    try {
+      const map = new Map();
+      if (!bulkReplaceMode) {
+        badgeRegistry.forEach((item) => {
+          const code = normalizeBadgeCode(item.badge);
+          if (code) map.set(code, { ...item, badge: code, attivo: item.attivo !== false });
+        });
+      }
+
+      bulkPreviewList.forEach((item) => {
+        const code = normalizeBadgeCode(item.badge);
+        if (!code) return;
+        const prev = map.get(code);
+        map.set(code, {
+          badge: code,
+          nome: item.nome || prev?.nome || `Collega #${code}`,
+          reparto: item.reparto || prev?.reparto || bulkDefaultReparto,
+          email: item.email || prev?.email || '',
+          attivo: true,
+        });
+      });
+
+      const merged = Array.from(map.values()).sort((a, b) => a.badge.localeCompare(b.badge));
+      setBadgeRegistry(merged);
+
+      // Sincronizzazione opzionale con tabella Supabase `badge_autorizzati`
+      try {
+        if (bulkReplaceMode) {
+          await supabase.from('badge_autorizzati').delete().neq('badge', '');
+        }
+        await supabase.from('badge_autorizzati').upsert(
+          merged.map((m) => ({
+            badge: m.badge,
+            nome: m.nome,
+            reparto: m.reparto,
+            email: m.email || null,
+            attivo: m.attivo !== false,
+          })),
+          { onConflict: 'badge' }
+        );
+      } catch {
+        // Rimane comunque salvato in locale
+      }
+
+      setBulkBadgeText('');
+      setAdminTab('elenco');
+      setAvviso(`Importati ${bulkPreviewList.length} badge (totale attivo: ${merged.length}).`);
+      setTimeout(() => setAvviso(''), 3500);
+    } finally {
+      setAdminLoadingImport(false);
+    }
+  }
+
+  async function handleAddSingleBadge(e) {
+    e.preventDefault();
+    const code = normalizeBadgeCode(singleBadgeForm.badge);
+    if (!code) {
+      setErrore('Inserisci un codice badge valido.');
+      return;
+    }
+    const entry = {
+      badge: code,
+      nome: extractBaseName(singleBadgeForm.nome) || `Collega #${code}`,
+      reparto: singleBadgeForm.reparto || REPARTI_AZIENDA[0],
+      email: singleBadgeForm.email.trim().toLowerCase(),
+      attivo: true,
+    };
+
+    const updated = [entry, ...badgeRegistry.filter((b) => normalizeBadgeCode(b.badge) !== code)];
+    setBadgeRegistry(updated);
+    setSingleBadgeForm({ badge: '', nome: '', reparto: REPARTI_AZIENDA[0], email: '' });
+    setAvviso(`Badge ${code} aggiunto all'elenco autorizzato.`);
+    setTimeout(() => setAvviso(''), 2500);
+
+    try {
+      await supabase.from('badge_autorizzati').upsert([entry], { onConflict: 'badge' });
+    } catch {}
+  }
+
+  async function toggleBadgeAttivo(badgeCode) {
+    const code = normalizeBadgeCode(badgeCode);
+    let nuovoStato = true;
+    const updated = badgeRegistry.map((b) => {
+      if (normalizeBadgeCode(b.badge) === code) {
+        nuovoStato = b.attivo === false;
+        return { ...b, attivo: nuovoStato };
+      }
+      return b;
+    });
+    setBadgeRegistry(updated);
+    try {
+      await supabase.from('badge_autorizzati').update({ attivo: nuovoStato }).eq('badge', code);
+    } catch {}
+  }
+
+  async function removeBadgeFromRegistry(badgeCode) {
+    const code = normalizeBadgeCode(badgeCode);
+    setBadgeRegistry((prev) => prev.filter((b) => normalizeBadgeCode(b.badge) !== code));
+    try {
+      await supabase.from('badge_autorizzati').delete().eq('badge', code);
+    } catch {}
+  }
+
+  function handleExportBadgeCsv() {
+    const header = 'Badge;Nome e Cognome;Reparto;Email;Stato';
+    const rows = badgeRegistry.map(
+      (b) =>
+        `${b.badge};${b.nome || ''};${b.reparto || ''};${b.email || ''};${
+          b.attivo === false ? 'Sospeso' : 'Attivo'
+        }`
+    );
+    const csvContent = [header, ...rows].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `badge-tracolleghi-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  // Autocompilazione da elenco badge mentre l'utente inserisce il codice nel profilo
+  function handleBadgeInputInProfile(val) {
+    setAuthForm((prev) => {
+      const code = normalizeBadgeCode(val);
+      const found = badgeRegistry.find(
+        (b) => normalizeBadgeCode(b.badge) === code && b.attivo !== false
+      );
+      if (found) {
+        return {
+          ...prev,
+          badge: val,
+          nome: prev.nome.trim() ? prev.nome : found.nome && !found.nome.startsWith('Collega #') ? found.nome : prev.nome,
+          reparto: found.reparto || prev.reparto,
+          email: prev.email.trim() ? prev.email : found.email || prev.email,
+        };
+      }
+      return { ...prev, badge: val };
+    });
+  }
 
   async function fetchSegnalazioniQualita() {
     try {
@@ -1400,18 +1797,44 @@ export default function App() {
       setErrore('Inserisci almeno il Numero Badge oppure la Email aziendale per la verifica interno-colleghi.');
       return;
     }
+
+    const code = normalizeBadgeCode(authForm.badge);
+    const emailClean = authForm.email.trim().toLowerCase();
+    const matchedBadge = badgeRegistry.find(
+      (b) =>
+        (code && normalizeBadgeCode(b.badge) === code) ||
+        (emailClean && b.email && b.email.toLowerCase() === emailClean)
+    );
+
+    if (matchedBadge && matchedBadge.attivo === false) {
+      setErrore(`Il badge ${matchedBadge.badge} risulta sospeso dall'amministratore.`);
+      return;
+    }
+
+    if (strictBadgeCheck && badgeRegistry.length > 0 && !matchedBadge) {
+      setErrore(
+        'Accesso riservato ai badge aziendali caricati nel registro. Controlla il codice o contatta un Admin.'
+      );
+      return;
+    }
+
     const updated = {
       nome: extractBaseName(authForm.nome),
-      badge: authForm.badge.trim(),
+      badge: code || authForm.badge.trim(),
       email: authForm.email.trim(),
-      reparto: authForm.reparto || REPARTI_AZIENDA[0],
+      reparto: matchedBadge?.reparto || authForm.reparto || REPARTI_AZIENDA[0],
       fotoProfilo: authForm.fotoProfilo,
       registrato: true,
+      badgeVerificato: Boolean(matchedBadge),
     };
     setUserProfile(updated);
     setShowProfileModal(false);
     setErrore('');
-    setAvviso(`Profilo aziendale salvato: ${updated.nome} (${updated.reparto})`);
+    setAvviso(
+      updated.badgeVerificato
+        ? `Profilo verificato con Badge #${updated.badge}: ${updated.nome} (${updated.reparto})`
+        : `Profilo aziendale salvato: ${updated.nome} (${updated.reparto})`
+    );
     setTimeout(() => setAvviso(''), 3500);
 
     if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
@@ -2515,6 +2938,11 @@ export default function App() {
                     ? extractBaseName(userProfile.nome).split(' ')[0]
                     : 'Badge'}
                 </span>
+                {userProfile.badgeVerificato && (
+                  <span title="Badge verificato" style={{ color: '#047857', fontWeight: 800 }}>
+                    ✓
+                  </span>
+                )}
               </button>
 
               <button
@@ -2683,7 +3111,7 @@ export default function App() {
           </div>
         )}
 
-        {errore && !showPublishModal && !showProfileModal && !annuncioInModifica && (
+        {errore && !showPublishModal && !showProfileModal && !showAdminModal && !annuncioInModifica && (
           <div
             style={{
               background: '#fee2e2',
@@ -3370,7 +3798,7 @@ export default function App() {
         </button>
       </nav>
 
-      {/* MENU RAPIDO A COMPARSA (CONVENZIONI, REPARTI & QUALITÀ, PAUSA GIOCO) */}
+      {/* MENU RAPIDO A COMPARSA (CONVENZIONI, REPARTI & QUALITÀ, PAUSA GIOCO, ADMIN BADGE) */}
       {showMoreMenu && (
         <div className="tm-more-backdrop" onClick={() => setShowMoreMenu(false)}>
           <div className="tm-more-sheet" onClick={(e) => e.stopPropagation()}>
@@ -3433,7 +3861,585 @@ export default function App() {
                   </button>
                 );
               })}
+
+              {/* Accesso rapido Pannello Admin & Importazione Massiva Badge */}
+              <button
+                type="button"
+                className="tm-more-item"
+                style={{ background: '#f1f5f9', borderColor: '#cbd5e1' }}
+                onClick={() => {
+                  setShowMoreMenu(false);
+                  setErrore('');
+                  setShowAdminModal(true);
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
+                  <span className="tm-more-icon">🛡️</span>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontWeight: 800, fontSize: '0.92rem', color: '#1b365d' }}>
+                      Admin & Gestione Badge
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      Importazione massiva CSV/Excel e registro dipendenti ({badgeRegistry.length})
+                    </div>
+                  </div>
+                </div>
+                <span style={{ color: '#1b365d', fontWeight: 800, fontSize: '1rem' }}>›</span>
+              </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODALE ADMIN & IMPORTAZIONE MASSIVA BADGE */}
+      {showAdminModal && (
+        <div
+          onClick={() => setShowAdminModal(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(15, 23, 42, 0.6)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px',
+            zIndex: 82,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: '#fff',
+              borderRadius: '20px',
+              padding: '20px',
+              width: '100%',
+              maxWidth: '640px',
+              maxHeight: '90vh',
+              overflowY: 'auto',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <div>
+                <h2 style={{ margin: 0, fontFamily: fontHeading, fontSize: '1.15rem', color: '#1b365d' }}>
+                  🛡️ Area Admin & Importazione Massiva Badge
+                </h2>
+                <div style={{ fontSize: '0.76rem', color: '#64748b' }}>
+                  Gestisci l'elenco dei badge aziendali autorizzati ad accedere a TRACOLLEGHI Market
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAdminModal(false)}
+                style={{ background: 'transparent', border: 'none', fontSize: '1.15rem', cursor: 'pointer' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {errore && (
+              <div style={{ background: '#fee2e2', color: '#991b1b', padding: '10px', borderRadius: '10px', marginBottom: '10px', fontSize: '0.82rem', fontWeight: 600 }}>
+                {errore}
+              </div>
+            )}
+
+            {!isAdminUnlocked ? (
+              <form
+                onSubmit={handleUnlockAdmin}
+                style={{
+                  background: '#f8fafc',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '14px',
+                  padding: '16px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '10px',
+                }}
+              >
+                <div style={{ fontSize: '0.86rem', color: '#334155', fontWeight: 600 }}>
+                  Inserisci il PIN Amministratore per gestire l'anagrafica badge (predefinito: <strong>2026</strong>).
+                </div>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <input
+                    type="password"
+                    inputMode="numeric"
+                    placeholder="PIN Admin..."
+                    value={adminPinInput}
+                    onChange={(e) => setAdminPinInput(e.target.value)}
+                    required
+                    style={{
+                      flex: 1,
+                      padding: '10px 12px',
+                      borderRadius: '10px',
+                      border: '1px solid #cbd5e1',
+                    }}
+                  />
+                  <button
+                    type="submit"
+                    style={{
+                      padding: '10px 18px',
+                      borderRadius: '10px',
+                      border: 'none',
+                      background: '#1b365d',
+                      color: '#fff',
+                      fontFamily: fontHeading,
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Sblocca
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                {/* Tab interne Admin */}
+                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                    <button
+                      type="button"
+                      onClick={() => setAdminTab('importa')}
+                      style={{
+                        padding: '7px 12px',
+                        borderRadius: '10px',
+                        border: adminTab === 'importa' ? '1px solid #2563eb' : '1px solid #e2e8f0',
+                        background: adminTab === 'importa' ? '#eff6ff' : '#fff',
+                        color: adminTab === 'importa' ? '#1d4ed8' : '#475569',
+                        fontWeight: 800,
+                        fontSize: '0.78rem',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      📥 Importazione Massiva
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAdminTab('elenco')}
+                      style={{
+                        padding: '7px 12px',
+                        borderRadius: '10px',
+                        border: adminTab === 'elenco' ? '1px solid #2563eb' : '1px solid #e2e8f0',
+                        background: adminTab === 'elenco' ? '#eff6ff' : '#fff',
+                        color: adminTab === 'elenco' ? '#1d4ed8' : '#475569',
+                        fontWeight: 800,
+                        fontSize: '0.78rem',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      📋 Registro Badge ({badgeRegistry.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAdminTab('sicurezza')}
+                      style={{
+                        padding: '7px 12px',
+                        borderRadius: '10px',
+                        border: adminTab === 'sicurezza' ? '1px solid #2563eb' : '1px solid #e2e8f0',
+                        background: adminTab === 'sicurezza' ? '#eff6ff' : '#fff',
+                        color: adminTab === 'sicurezza' ? '#1d4ed8' : '#475569',
+                        fontWeight: 800,
+                        fontSize: '0.78rem',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      🔐 Regole & PIN
+                    </button>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleLockAdmin}
+                    style={{
+                      background: '#f1f5f9',
+                      border: '1px solid #cbd5e1',
+                      borderRadius: '8px',
+                      padding: '5px 9px',
+                      fontSize: '0.72rem',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    🔒 Blocca
+                  </button>
+                </div>
+
+                {/* TAB 1: IMPORTAZIONE MASSIVA DA CSV / EXCEL / TESTO */}
+                {adminTab === 'importa' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <div
+                      style={{
+                        background: '#eff6ff',
+                        border: '1px solid #bfdbfe',
+                        borderRadius: '12px',
+                        padding: '11px 13px',
+                        fontSize: '0.8rem',
+                        color: '#1e3a8a',
+                        lineHeight: 1.45,
+                      }}
+                    >
+                      <strong>Come funziona:</strong> carica un file <strong>.CSV / .TXT</strong> esportato da Excel oppure incolla direttamente le righe qui sotto.
+                      <br />
+                      Formati supportati per riga: <code>0412;Marco Rossi;Produzione / Linea;marco@azienda.it</code> oppure solo <code>0412, Marco Rossi</code> o solo il codice badge.
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                      <label
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          background: '#1b365d',
+                          color: '#fff',
+                          borderRadius: '10px',
+                          padding: '8px 13px',
+                          fontSize: '0.8rem',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        📄 Carica file CSV / TXT
+                        <input
+                          type="file"
+                          accept=".csv,.txt,text/csv,text/plain"
+                          onChange={handleCsvFileImport}
+                          style={{ display: 'none' }}
+                        />
+                      </label>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ fontSize: '0.76rem', fontWeight: 700, color: '#475569' }}>Reparto default:</span>
+                        <select
+                          value={bulkDefaultReparto}
+                          onChange={(e) => setBulkDefaultReparto(e.target.value)}
+                          style={{ padding: '7px 9px', borderRadius: '9px', border: '1px solid #cbd5e1', fontSize: '0.78rem' }}
+                        >
+                          {REPARTI_AZIENDA.map((rep) => (
+                            <option key={rep} value={rep}>
+                              {rep}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    <textarea
+                      rows={5}
+                      placeholder={'Incolla qui l\'elenco da Excel o CSV, es:\n0412;Marco Rossi;Produzione / Linea;m.rossi@azienda.it\n0589;Laura Bianchi;Ufficio Tecnico / Progettazione\n0731;Luca Verdi;Logistica / Magazzino'}
+                      value={bulkBadgeText}
+                      onChange={(e) => setBulkBadgeText(e.target.value)}
+                      style={{
+                        width: '100%',
+                        boxSizing: 'border-box',
+                        padding: '10px 12px',
+                        borderRadius: '12px',
+                        border: '1px solid #cbd5e1',
+                        fontFamily: 'monospace',
+                        fontSize: '0.82rem',
+                      }}
+                    />
+
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8rem', fontWeight: 700, color: '#334155' }}>
+                      <input
+                        type="checkbox"
+                        checked={bulkReplaceMode}
+                        onChange={(e) => setBulkReplaceMode(e.target.checked)}
+                      />
+                      Sostituisci l'intero registro esistente (se deselezionato, aggiunge e aggiorna)
+                    </label>
+
+                    {bulkPreviewList.length > 0 && (
+                      <div
+                        style={{
+                          background: '#f8fafc',
+                          border: '1px solid #e2e8f0',
+                          borderRadius: '12px',
+                          padding: '10px 12px',
+                        }}
+                      >
+                        <div style={{ fontSize: '0.78rem', fontWeight: 800, color: '#047857', marginBottom: '6px' }}>
+                          Anteprima pronta: {bulkPreviewList.length} badge rilevati
+                        </div>
+                        <div style={{ maxHeight: '135px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          {bulkPreviewList.slice(0, 25).map((row, idx) => (
+                            <div
+                              key={`${row.badge}-${idx}`}
+                              style={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                gap: '8px',
+                                fontSize: '0.76rem',
+                                background: '#fff',
+                                padding: '5px 8px',
+                                borderRadius: '7px',
+                                border: '1px solid #e2e8f0',
+                              }}
+                            >
+                              <span>
+                                <strong>#{row.badge}</strong> • {row.nome}
+                              </span>
+                              <span style={{ color: '#64748b' }}>{row.reparto}</span>
+                            </div>
+                          ))}
+                          {bulkPreviewList.length > 25 && (
+                            <div style={{ fontSize: '0.72rem', color: '#64748b', textAlign: 'center', paddingTop: '4px' }}>
+                              ...e altri {bulkPreviewList.length - 25} badge
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    <button
+                      type="button"
+                      disabled={adminLoadingImport || bulkPreviewList.length === 0}
+                      onClick={handleConfirmBulkBadgeImport}
+                      style={{
+                        padding: '11px',
+                        borderRadius: '12px',
+                        border: 'none',
+                        background: bulkPreviewList.length > 0 ? '#2563eb' : '#94a3b8',
+                        color: '#fff',
+                        fontFamily: fontHeading,
+                        fontWeight: 800,
+                        cursor: bulkPreviewList.length > 0 ? 'pointer' : 'not-allowed',
+                      }}
+                    >
+                      {adminLoadingImport
+                        ? 'Importazione in corso...'
+                        : `Importa ${bulkPreviewList.length} Badge nel Registro`}
+                    </button>
+                  </div>
+                )}
+
+                {/* TAB 2: ELENCO BADGE AUTORIZZATI + AGGIUNTA SINGOLA */}
+                {adminTab === 'elenco' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <form
+                      onSubmit={handleAddSingleBadge}
+                      style={{
+                        background: '#f8fafc',
+                        border: '1px solid #e2e8f0',
+                        borderRadius: '12px',
+                        padding: '11px',
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
+                        gap: '7px',
+                      }}
+                    >
+                      <input
+                        type="text"
+                        placeholder="Badge (es. 0412)"
+                        value={singleBadgeForm.badge}
+                        onChange={(e) => setSingleBadgeForm((prev) => ({ ...prev, badge: e.target.value }))}
+                        required
+                        style={{ padding: '7px 9px', borderRadius: '8px', border: '1px solid #cbd5e1' }}
+                      />
+                      <input
+                        type="text"
+                        placeholder="Nome e Cognome"
+                        value={singleBadgeForm.nome}
+                        onChange={(e) => setSingleBadgeForm((prev) => ({ ...prev, nome: e.target.value }))}
+                        style={{ padding: '7px 9px', borderRadius: '8px', border: '1px solid #cbd5e1' }}
+                      />
+                      <select
+                        value={singleBadgeForm.reparto}
+                        onChange={(e) => setSingleBadgeForm((prev) => ({ ...prev, reparto: e.target.value }))}
+                        style={{ padding: '7px 9px', borderRadius: '8px', border: '1px solid #cbd5e1' }}
+                      >
+                        {REPARTI_AZIENDA.map((rep) => (
+                          <option key={rep} value={rep}>
+                            {rep}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="submit"
+                        style={{
+                          background: '#1b365d',
+                          color: '#fff',
+                          border: 'none',
+                          borderRadius: '8px',
+                          padding: '7px 11px',
+                          fontWeight: 800,
+                          fontSize: '0.78rem',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        + Aggiungi
+                      </button>
+                    </form>
+
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
+                      <input
+                        type="search"
+                        placeholder="Cerca badge, nome o reparto..."
+                        value={adminSearchBadge}
+                        onChange={(e) => setAdminSearchBadge(e.target.value)}
+                        style={{ flex: 1, minWidth: '180px', padding: '8px 11px', borderRadius: '10px', border: '1px solid #cbd5e1' }}
+                      />
+                      {badgeRegistry.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={handleExportBadgeCsv}
+                          style={{
+                            background: '#fff',
+                            border: '1px solid #cbd5e1',
+                            borderRadius: '9px',
+                            padding: '8px 11px',
+                            fontSize: '0.76rem',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          ⬇️ Esporta CSV
+                        </button>
+                      )}
+                    </div>
+
+                    {filteredBadgeRegistry.length === 0 ? (
+                      <p style={{ margin: 0, fontSize: '0.82rem', color: '#64748b', textAlign: 'center', padding: '16px' }}>
+                        Nessun badge nel registro. Usa la scheda <strong>Importazione Massiva</strong> per caricarli tutti insieme.
+                      </p>
+                    ) : (
+                      <div style={{ maxHeight: '260px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        {filteredBadgeRegistry.map((b) => {
+                          const sospeso = b.attivo === false;
+                          return (
+                            <div
+                              key={b.badge}
+                              style={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                gap: '8px',
+                                flexWrap: 'wrap',
+                                background: sospeso ? '#fef2f2' : '#f8fafc',
+                                border: '1px solid #e2e8f0',
+                                borderRadius: '10px',
+                                padding: '8px 11px',
+                              }}
+                            >
+                              <div>
+                                <div style={{ fontSize: '0.84rem', fontWeight: 800, color: '#0f172a' }}>
+                                  #{b.badge} • {b.nome}
+                                </div>
+                                <div style={{ fontSize: '0.72rem', color: '#64748b' }}>
+                                  {b.reparto} {b.email ? `• ${b.email}` : ''}
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', gap: '6px' }}>
+                                <button
+                                  type="button"
+                                  onClick={() => toggleBadgeAttivo(b.badge)}
+                                  style={{
+                                    background: sospeso ? '#ecfdf5' : '#fef3c7',
+                                    border: '1px solid #cbd5e1',
+                                    borderRadius: '7px',
+                                    padding: '4px 8px',
+                                    fontSize: '0.72rem',
+                                    fontWeight: 700,
+                                    cursor: 'pointer',
+                                  }}
+                                >
+                                  {sospeso ? 'Riattiva' : 'Sospendi'}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => removeBadgeFromRegistry(b.badge)}
+                                  style={{
+                                    background: '#fee2e2',
+                                    border: '1px solid #fecaca',
+                                    color: '#b91c1c',
+                                    borderRadius: '7px',
+                                    padding: '4px 8px',
+                                    fontSize: '0.72rem',
+                                    fontWeight: 700,
+                                    cursor: 'pointer',
+                                  }}
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* TAB 3: REGOLE ACCESSO & CAMBIO PIN ADMIN */}
+                {adminTab === 'sicurezza' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <div
+                      style={{
+                        background: '#f8fafc',
+                        border: '1px solid #e2e8f0',
+                        borderRadius: '12px',
+                        padding: '12px',
+                      }}
+                    >
+                      <label style={{ display: 'flex', alignItems: 'flex-start', gap: '9px', cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          checked={strictBadgeCheck}
+                          onChange={(e) => setStrictBadgeCheck(e.target.checked)}
+                          style={{ marginTop: '3px' }}
+                        />
+                        <div>
+                          <div style={{ fontSize: '0.84rem', fontWeight: 800, color: '#0f172a' }}>
+                            Modalità Blocco Stretto (solo badge importati)
+                          </div>
+                          <div style={{ fontSize: '0.76rem', color: '#64748b', marginTop: '2px' }}>
+                            Se attiva, possono registrarsi solo i colleghi il cui codice badge o email è presente nel registro Admin.
+                          </div>
+                        </div>
+                      </label>
+                    </div>
+
+                    <form
+                      onSubmit={handleUpdateAdminPin}
+                      style={{
+                        background: '#f8fafc',
+                        border: '1px solid #e2e8f0',
+                        borderRadius: '12px',
+                        padding: '12px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '8px',
+                      }}
+                    >
+                      <div style={{ fontSize: '0.82rem', fontWeight: 800, color: '#1b365d' }}>
+                        Modifica PIN Amministratore
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <input
+                          type="password"
+                          placeholder="Nuovo PIN (min. 4 caratteri)..."
+                          value={newAdminPinInput}
+                          onChange={(e) => setNewAdminPinInput(e.target.value)}
+                          style={{ flex: 1, padding: '8px 10px', borderRadius: '9px', border: '1px solid #cbd5e1' }}
+                        />
+                        <button
+                          type="submit"
+                          style={{
+                            background: '#1b365d',
+                            color: '#fff',
+                            border: 'none',
+                            borderRadius: '9px',
+                            padding: '8px 14px',
+                            fontWeight: 700,
+                            fontSize: '0.78rem',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          Aggiorna PIN
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -3833,18 +4839,6 @@ export default function App() {
                 </label>
               </div>
 
-              <div>
-                <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 700, marginBottom: '4px' }}>Nome e Cognome *</label>
-                <input
-                  type="text"
-                  placeholder="Es. Marco Rossi"
-                  value={authForm.nome}
-                  onChange={(e) => setAuthForm((prev) => ({ ...prev, nome: e.target.value }))}
-                  required
-                  style={{ width: '100%', boxSizing: 'border-box', padding: '9px 11px', borderRadius: '10px', border: '1px solid #cbd5e1' }}
-                />
-              </div>
-
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 700, marginBottom: '4px' }}>Numero Badge</label>
@@ -3852,7 +4846,7 @@ export default function App() {
                     type="text"
                     placeholder="Es. 0412"
                     value={authForm.badge}
-                    onChange={(e) => setAuthForm((prev) => ({ ...prev, badge: e.target.value }))}
+                    onChange={(e) => handleBadgeInputInProfile(e.target.value)}
                     style={{ width: '100%', boxSizing: 'border-box', padding: '9px 11px', borderRadius: '10px', border: '1px solid #cbd5e1' }}
                   />
                 </div>
@@ -3866,6 +4860,18 @@ export default function App() {
                     style={{ width: '100%', boxSizing: 'border-box', padding: '9px 11px', borderRadius: '10px', border: '1px solid #cbd5e1' }}
                   />
                 </div>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 700, marginBottom: '4px' }}>Nome e Cognome *</label>
+                <input
+                  type="text"
+                  placeholder="Es. Marco Rossi"
+                  value={authForm.nome}
+                  onChange={(e) => setAuthForm((prev) => ({ ...prev, nome: e.target.value }))}
+                  required
+                  style={{ width: '100%', boxSizing: 'border-box', padding: '9px 11px', borderRadius: '10px', border: '1px solid #cbd5e1' }}
+                />
               </div>
 
               <div>
@@ -3995,6 +5001,33 @@ export default function App() {
                     );
                   })}
                 </div>
+              </div>
+
+              {/* Pulsante apertura pannello Admin Badge */}
+              <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <div style={{ fontSize: '0.8rem', color: '#334155' }}>
+                  <strong>Registro Badge Aziendali:</strong> {badgeRegistry.length} caricati
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowSettingsModal(false);
+                    setErrore('');
+                    setShowAdminModal(true);
+                  }}
+                  style={{
+                    background: '#1b365d',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '8px',
+                    padding: '6px 11px',
+                    fontSize: '0.76rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  🛡️ Admin & Importa Badge
+                </button>
               </div>
             </div>
 
