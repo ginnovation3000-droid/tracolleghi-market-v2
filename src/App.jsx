@@ -1100,7 +1100,6 @@ export default function App() {
         setAnnuncioDaEliminare(null);
         setChatAperta(null);
         setUtenteDaValutare(null);
-        setRepartoInModificaKpi(null);
         setSchedaAnnuncio(null);
       }
     };
@@ -4193,7 +4192,7 @@ export default function App() {
                       setSezioneAttiva(sez.id);
                       setShowMoreMenu(false);
                       if (sez.id === 'gioco') fetchClassificaGioco();
-                                          }}
+                    }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
                       <span className="tm-more-icon">{sez.icon}</span>
@@ -5652,72 +5651,7 @@ export default function App() {
         </div>
       )}
 
-      {/* MODALE AGGIORNA KPI REPARTO */}
-      {repartoInModificaKpi && (
-        <div
-          onClick={() => setRepartoInModificaKpi(null)}
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(15, 23, 42, 0.56)',
-            backdropFilter: 'blur(6px)',
-            WebkitBackdropFilter: 'blur(6px)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '16px',
-            zIndex: 85,
-          }}
-        >
-          <div onClick={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: '20px', padding: '20px', width: '100%', maxWidth: '400px' }}>
-            <h3 style={{ margin: '0 0 12px', fontFamily: fontHeading, fontSize: '1.05rem', color: '#0f172a' }}>
-              KPI • {repartoInModificaKpi}
-            </h3>
-            <form onSubmit={handleSalvaKpiReparto} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 700, marginBottom: '4px' }}>Giorni senza infortuni</label>
-                <input
-                  type="number"
-                  min="0"
-                  value={kpiEditForm.giorniSenzaInfortuni}
-                  onChange={(e) => setKpiEditForm((prev) => ({ ...prev, giorniSenzaInfortuni: e.target.value }))}
-                  style={{ width: '100%', boxSizing: 'border-box', padding: '9px 11px', borderRadius: '10px', border: '1px solid #cbd5e1' }}
-                />
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 700, marginBottom: '4px' }}>Livello qualità (%)</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  max="100"
-                  value={kpiEditForm.livelloQualita}
-                  onChange={(e) => setKpiEditForm((prev) => ({ ...prev, livelloQualita: e.target.value }))}
-                  style={{ width: '100%', boxSizing: 'border-box', padding: '9px 11px', borderRadius: '10px', border: '1px solid #cbd5e1' }}
-                />
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 700, marginBottom: '4px' }}>Infortuni registrati</label>
-                <input
-                  type="number"
-                  min="0"
-                  value={kpiEditForm.infortuniAnno}
-                  onChange={(e) => setKpiEditForm((prev) => ({ ...prev, infortuniAnno: e.target.value }))}
-                  style={{ width: '100%', boxSizing: 'border-box', padding: '9px 11px', borderRadius: '10px', border: '1px solid #cbd5e1' }}
-                />
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '4px' }}>
-                <button type="button" onClick={() => setRepartoInModificaKpi(null)} style={{ padding: '8px 13px', borderRadius: '10px', border: '1px solid #cbd5e1', background: '#fff', fontWeight: 700, cursor: 'pointer' }}>
-                  Annulla
-                </button>
-                <button type="submit" style={{ padding: '8px 15px', borderRadius: '10px', border: 'none', background: '#0f172a', color: '#fff', fontFamily: fontHeading, fontWeight: 800, cursor: 'pointer' }}>
-                  Salva KPI
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+
     </div>
   );
 }
