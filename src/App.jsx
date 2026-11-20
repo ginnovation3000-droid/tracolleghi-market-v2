@@ -5655,6 +5655,3 @@ export default function App() {
     </div>
   );
 }
-```[cite: 3, 4, 10, 12, 13]
-
-Incolla questo contenuto in `src/App.jsx` su GitHub e fai il commit per avviare il deploy su Vercel[cite: 3, 13]. Se dopo il deploy noti ancora qualche dettaglio da sistemare, dimmelo pure!
