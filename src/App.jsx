@@ -335,6 +335,12 @@ function renderStarsInline(media, totale) {
 }
 
 export default function App() {
+  // Stato aggiornamento Service Worker (nuova versione app disponibile)
+  const [swUpdateAvailable, setSwUpdateAvailable] = useState(false);
+  const [swBannerDismissed, setSwBannerDismissed] = useState(false);
+  const [swUpdating, setSwUpdating] = useState(false);
+  const waitingWorkerRef = useRef(null);
+
   useEffect(() => {
     const link = document.createElement('link');
     link.rel = 'stylesheet';
@@ -346,18 +352,82 @@ export default function App() {
     };
   }, []);
 
-  // Registrazione Service Worker per notifiche di sistema
+  // Registrazione Service Worker + rilevamento immediato di nuove versioni dell'app
   useEffect(() => {
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js').catch(() => {});
-    }
+    if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return;
+
+    let refreshing = false;
+    let updateInterval = null;
+    let mounted = true;
+
+    const handleControllerChange = () => {
+      if (refreshing) return;
+      refreshing = true;
+      window.location.reload();
+    };
+
+    const notifyWaitingWorker = (worker) => {
+      if (!worker || !mounted) return;
+      waitingWorkerRef.current = worker;
+      setSwUpdateAvailable(true);
+      setSwBannerDismissed(false);
+    };
+
+    navigator.serviceWorker.addEventListener('controllerchange', handleControllerChange);
+
+    navigator.serviceWorker
+      .register('/sw.js')
+      .then((reg) => {
+        if (!mounted) return;
+
+        if (reg.waiting) {
+          notifyWaitingWorker(reg.waiting);
+        }
+
+        reg.addEventListener('updatefound', () => {
+          const newWorker = reg.installing;
+          if (!newWorker) return;
+          newWorker.addEventListener('statechange', () => {
+            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+              notifyWaitingWorker(newWorker);
+            }
+          });
+        });
+
+        // Controllo periodico per intercettare nuovi deploy su Vercel mentre l'app resta aperta
+        updateInterval = setInterval(() => {
+          reg.update().catch(() => {});
+        }, 60000);
+      })
+      .catch(() => {});
+
+    return () => {
+      mounted = false;
+      if (updateInterval) clearInterval(updateInterval);
+      navigator.serviceWorker.removeEventListener('controllerchange', handleControllerChange);
+    };
   }, []);
+
+  function applicaAggiornamentoApp() {
+    setSwUpdating(true);
+    const waiting = waitingWorkerRef.current;
+    if (waiting) {
+      waiting.postMessage({ type: 'SKIP_WAITING' });
+      setTimeout(() => {
+        window.location.reload();
+      }, 1500);
+    } else {
+      window.location.reload();
+    }
+  }
 
   // Sezione attiva dell'app unica: bacheca | cerco_aiuto | convenzioni | qualita | gioco | chat
   const [sezioneAttiva, setSezioneAttiva] = useState('bacheca');
   const [filtroCercoAiuto, setFiltroCercoAiuto] = useState('Tutti');
   const [filtroConvenzioneCat, setFiltroConvenzioneCat] = useState('Tutte');
   const [filtroRepartoQualita, setFiltroRepartoQualita] = useState('Tutti');
+  const [codiceCopiatoId, setCodiceCopiatoId] = useState(null);
+  const [schedaAnnuncio, setSchedaAnnuncio] = useState(null);
   const [showInstallBanner, setShowInstallBanner] = useState(() => {
     try {
       return localStorage.getItem('tracolleghi_install_dismissed') !== '1';
@@ -469,6 +539,19 @@ export default function App() {
     setPreferitiIds((prev) =>
       prev.includes(idStr) ? prev.filter((id) => id !== idStr) : [...prev, idStr]
     );
+  }
+
+  function handleCopiaCodiceConvenzione(conv) {
+    if (!conv?.codice) return;
+    if (navigator?.clipboard?.writeText) {
+      navigator.clipboard.writeText(conv.codice).catch(() => {});
+    }
+    setCodiceCopiatoId(conv.id);
+    setAvviso(`Codice convenzione ${conv.codice} copiato!`);
+    setTimeout(() => {
+      setAvviso('');
+      setCodiceCopiatoId((prev) => (prev === conv.id ? null : prev));
+    }, 2200);
   }
 
   // STATO REPARTI, SICUREZZA, INFORTUNI & QUALITÀ
@@ -628,6 +711,7 @@ export default function App() {
         setChatAperta(null);
         setUtenteDaValutare(null);
         setRepartoInModificaKpi(null);
+        setSchedaAnnuncio(null);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -1588,6 +1672,9 @@ export default function App() {
       if (chatAperta?.annuncio?.id === annuncioDaEliminare.id) {
         setChatAperta(null);
       }
+      if (schedaAnnuncio?.item?.id === annuncioDaEliminare.id) {
+        setSchedaAnnuncio(null);
+      }
       setAvviso('Annuncio eliminato.');
       setTimeout(() => setAvviso(''), 2500);
     } catch (err) {
@@ -1733,6 +1820,7 @@ export default function App() {
       return;
     }
     const nomePulito = extractBaseName(altroUtente);
+    setSchedaAnnuncio(null);
     setChatAperta({ annuncio, altroUtente: nomePulito });
     setSettings((prev) => ({ ...prev, badgeNonLetti: 0 }));
     fetchMessaggi();
@@ -1838,12 +1926,14 @@ export default function App() {
         <div>
           {foto.length > 0 && (
             <div
+              onClick={() => setSchedaAnnuncio({ item, isCercoAiutoCard })}
               style={{
                 position: 'relative',
                 display: 'grid',
                 gridTemplateColumns: foto.length === 1 ? '1fr' : 'repeat(2, 1fr)',
                 gap: '2px',
                 background: '#e2e8f0',
+                cursor: 'pointer',
               }}
             >
               {foto.map((src, i) => (
@@ -1942,7 +2032,12 @@ export default function App() {
               )}
             </div>
 
-            <h3 style={{ margin: '6px 0', fontFamily: fontHeading, fontSize: '1.06rem' }}>{item.titolo}</h3>
+            <h3
+              onClick={() => setSchedaAnnuncio({ item, isCercoAiutoCard })}
+              style={{ margin: '6px 0', fontFamily: fontHeading, fontSize: '1.06rem', cursor: 'pointer' }}
+            >
+              {item.titolo}
+            </h3>
             <p style={{ margin: 0, color: '#475569', fontSize: '0.9rem', lineHeight: 1.45 }}>
               {descrizionePulita}
             </p>
@@ -1955,9 +2050,9 @@ export default function App() {
                     style={{
                       fontSize: '0.7rem',
                       fontWeight: 700,
-                      background: '#f1f5f9',
-                      color: '#334155',
-                      border: '1px solid #e2e8f0',
+                      background: /cripto/i.test(p) ? '#fef3c7' : '#f1f5f9',
+                      color: /cripto/i.test(p) ? '#92400e' : '#334155',
+                      border: /cripto/i.test(p) ? '1px solid #fde68a' : '1px solid #e2e8f0',
                       padding: '2px 8px',
                       borderRadius: '999px',
                     }}
@@ -2301,6 +2396,84 @@ export default function App() {
         }
       `}</style>
 
+      {/* AVVISO DISCRETO NUOVA VERSIONE DISPONIBILE (SERVICE WORKER) */}
+      {swUpdateAvailable && !swBannerDismissed && (
+        <div
+          role="status"
+          aria-live="polite"
+          style={{
+            background: '#0f172a',
+            color: '#f8fafc',
+            borderBottom: '1px solid rgba(148, 163, 184, 0.25)',
+            padding: '8px 0',
+            fontSize: '0.82rem',
+          }}
+        >
+          <div
+            className="tm-container"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '10px',
+              flexWrap: 'wrap',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span
+                style={{
+                  width: '8px',
+                  height: '8px',
+                  borderRadius: '50%',
+                  background: '#38bdf8',
+                  display: 'inline-block',
+                  flexShrink: 0,
+                }}
+              />
+              <span>
+                <strong>Nuova versione di TRACOLLEGHI Market disponibile</strong> • Aggiorna per vedere le ultime novità.
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: 'auto' }}>
+              <button
+                type="button"
+                onClick={applicaAggiornamentoApp}
+                disabled={swUpdating}
+                style={{
+                  background: '#2563eb',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  padding: '5px 12px',
+                  fontFamily: fontHeading,
+                  fontWeight: 700,
+                  fontSize: '0.78rem',
+                  cursor: 'pointer',
+                }}
+              >
+                {swUpdating ? 'Aggiornamento...' : 'Aggiorna ora'}
+              </button>
+              <button
+                type="button"
+                aria-label="Chiudi avviso aggiornamento"
+                onClick={() => setSwBannerDismissed(true)}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: '#94a3b8',
+                  fontSize: '0.95rem',
+                  cursor: 'pointer',
+                  padding: '2px 6px',
+                }}
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <header
         style={{
           background: 'linear-gradient(135deg, #13294b 0%, #1b365d 52%, #2563eb 100%)',
@@ -2588,6 +2761,45 @@ export default function App() {
                     ❤️ Preferiti ({preferitiIds.length})
                   </button>
                 </div>
+              </div>
+
+              <div
+                style={{
+                  marginTop: '8px',
+                  fontSize: '0.76rem',
+                  color: '#64748b',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  gap: '6px',
+                }}
+              >
+                <span>
+                  Mostrati <strong>{annunciFiltrati.length}</strong> annunci in bacheca • Tocca titolo o foto per i dettagli
+                </span>
+                {(filtroCategoria !== 'Tutte' || filtroTipo !== 'Tutti' || soloPreferiti || ricerca.trim()) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFiltroCategoria('Tutte');
+                      setFiltroTipo('Tutti');
+                      setSoloPreferiti(false);
+                      setRicerca('');
+                    }}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      color: '#2563eb',
+                      fontWeight: 700,
+                      fontSize: '0.76rem',
+                      cursor: 'pointer',
+                      padding: 0,
+                    }}
+                  >
+                    Azzera filtri
+                  </button>
+                )}
               </div>
             </>
           )}
@@ -2885,67 +3097,86 @@ export default function App() {
 
         {sezioneAttiva === 'convenzioni' && (
           <section className="tm-cards-grid">
-            {convenzioniFiltrate.map((conv) => (
-              <article
-                key={conv.id}
-                style={{
-                  background: '#fff',
-                  borderRadius: '16px',
-                  padding: '16px',
-                  boxShadow: '0 2px 12px rgba(15, 23, 42, 0.05)',
-                  border: '1px solid #e2e8f0',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  justifyContent: 'space-between',
-                  gap: '12px',
-                }}
-              >
-                <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
-                    <span
-                      style={{
-                        fontFamily: fontHeading,
-                        fontSize: '0.72rem',
-                        fontWeight: 700,
-                        background: '#eff6ff',
-                        color: '#1d4ed8',
-                        padding: '3px 9px',
-                        borderRadius: '999px',
-                      }}
-                    >
-                      {conv.categoria}
-                    </span>
-                    <span style={{ fontSize: '0.76rem', color: '#64748b', fontWeight: 600 }}>{conv.zona}</span>
-                  </div>
-
-                  <h3 style={{ margin: '10px 0 4px', fontFamily: fontHeading, fontSize: '1.06rem', color: '#0f172a' }}>
-                    {conv.locale}
-                  </h3>
-                  <div style={{ fontWeight: 800, color: '#047857', fontSize: '0.96rem', marginBottom: '6px' }}>
-                    🎁 {conv.sconto}
-                  </div>
-                  <p style={{ margin: 0, color: '#475569', fontSize: '0.86rem', lineHeight: 1.45 }}>
-                    {conv.condizioni}
-                  </p>
-                </div>
-
-                <div
+            {convenzioniFiltrate.map((conv) => {
+              const copiato = codiceCopiatoId === conv.id;
+              return (
+                <article
+                  key={conv.id}
                   style={{
-                    background: '#f8fafc',
-                    border: '1px dashed #cbd5e1',
-                    borderRadius: '10px',
-                    padding: '8px 12px',
+                    background: '#fff',
+                    borderRadius: '16px',
+                    padding: '16px',
+                    boxShadow: '0 2px 12px rgba(15, 23, 42, 0.05)',
+                    border: '1px solid #e2e8f0',
                     display: 'flex',
+                    flexDirection: 'column',
                     justifyContent: 'space-between',
-                    alignItems: 'center',
-                    fontSize: '0.8rem',
+                    gap: '12px',
                   }}
                 >
-                  <span style={{ color: '#64748b', fontWeight: 600 }}>Codice / Riferimento:</span>
-                  <strong style={{ color: '#1b365d', letterSpacing: '0.03em' }}>{conv.codice}</strong>
-                </div>
-              </article>
-            ))}
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+                      <span
+                        style={{
+                          fontFamily: fontHeading,
+                          fontSize: '0.72rem',
+                          fontWeight: 700,
+                          background: '#eff6ff',
+                          color: '#1d4ed8',
+                          padding: '3px 9px',
+                          borderRadius: '999px',
+                        }}
+                      >
+                        {conv.categoria}
+                      </span>
+                      <span style={{ fontSize: '0.76rem', color: '#64748b', fontWeight: 600 }}>{conv.zona}</span>
+                    </div>
+
+                    <h3 style={{ margin: '10px 0 4px', fontFamily: fontHeading, fontSize: '1.06rem', color: '#0f172a' }}>
+                      {conv.locale}
+                    </h3>
+                    <div style={{ fontWeight: 800, color: '#047857', fontSize: '0.96rem', marginBottom: '6px' }}>
+                      🎁 {conv.sconto}
+                    </div>
+                    <p style={{ margin: 0, color: '#475569', fontSize: '0.86rem', lineHeight: 1.45 }}>
+                      {conv.condizioni}
+                    </p>
+                  </div>
+
+                  <div
+                    style={{
+                      background: '#f8fafc',
+                      border: '1px dashed #cbd5e1',
+                      borderRadius: '10px',
+                      padding: '8px 12px',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      gap: '8px',
+                      fontSize: '0.8rem',
+                    }}
+                  >
+                    <strong style={{ color: '#1b365d', letterSpacing: '0.03em' }}>{conv.codice}</strong>
+                    <button
+                      type="button"
+                      onClick={() => handleCopiaCodiceConvenzione(conv)}
+                      style={{
+                        background: copiato ? '#047857' : '#1b365d',
+                        color: '#fff',
+                        border: 'none',
+                        borderRadius: '8px',
+                        padding: '4px 10px',
+                        fontSize: '0.74rem',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {copiato ? 'Copiato ✓' : 'Copia codice'}
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
           </section>
         )}
 
@@ -3700,6 +3931,223 @@ export default function App() {
           ? '🤝 Chiedi / Pubblica'
           : '➕ Pubblica'}
       </button>
+
+      {/* MODALE SCHEDA DETTAGLIO ANNUNCIO / RICHIESTA */}
+      {schedaAnnuncio && (() => {
+        const { item, isCercoAiutoCard } = schedaAnnuncio;
+        const foto = normalizeImages(item);
+        const pagamentiItem = !isCercoAiutoCard ? extractPagamentiFromDesc(item.descrizione) : [];
+        const venduto = isAnnuncioVenduto(item);
+        const descrizionePulita = cleanDescrizione(item.descrizione);
+        const autorePulito = extractBaseName(item.autore);
+        const mioNome = extractBaseName(userProfile.nome).toLowerCase();
+        const isOwner = Boolean(mioNome && autorePulito.toLowerCase() === mioNome);
+        const statsAutore = getStatsUtente(autorePulito);
+        const isPreferito = preferitiIds.includes(String(item.id));
+
+        return (
+          <div
+            onClick={() => setSchedaAnnuncio(null)}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(15, 23, 42, 0.56)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '16px',
+              zIndex: 75,
+            }}
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                background: '#fff',
+                borderRadius: '20px',
+                padding: '22px',
+                width: '100%',
+                maxWidth: '540px',
+                maxHeight: '90vh',
+                overflowY: 'auto',
+                boxShadow: '0 20px 50px rgba(0, 0, 0, 0.25)',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+                  <span
+                    style={{
+                      fontFamily: fontHeading,
+                      fontSize: '0.74rem',
+                      fontWeight: 700,
+                      background: '#eff6ff',
+                      color: '#1d4ed8',
+                      padding: '3px 10px',
+                      borderRadius: '999px',
+                    }}
+                  >
+                    {isCercoAiutoCard ? item.tipo || 'Cerco / Aiuto' : item.categoria || 'Generale'}
+                  </span>
+                  {venduto && (
+                    <span
+                      style={{
+                        fontFamily: fontHeading,
+                        fontSize: '0.74rem',
+                        fontWeight: 800,
+                        background: '#fee2e2',
+                        color: '#b91c1c',
+                        padding: '3px 10px',
+                        borderRadius: '999px',
+                      }}
+                    >
+                      VENDUTO
+                    </span>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSchedaAnnuncio(null)}
+                  style={{ background: 'transparent', border: 'none', fontSize: '1.2rem', cursor: 'pointer' }}
+                >
+                  ✕
+                </button>
+              </div>
+
+              {foto.length > 0 && (
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: foto.length === 1 ? '1fr' : 'repeat(2, 1fr)',
+                    gap: '8px',
+                    marginBottom: '14px',
+                  }}
+                >
+                  {foto.map((src, i) => (
+                    <img
+                      key={i}
+                      src={src}
+                      alt={`${item.titolo} ${i + 1}`}
+                      style={{
+                        width: '100%',
+                        height: foto.length === 1 ? '230px' : '130px',
+                        objectFit: 'cover',
+                        borderRadius: '12px',
+                      }}
+                    />
+                  ))}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '10px', flexWrap: 'wrap' }}>
+                <h2 style={{ margin: 0, fontFamily: fontHeading, fontSize: '1.22rem', color: '#0f172a' }}>
+                  {item.titolo}
+                </h2>
+                {!isCercoAiutoCard && (
+                  <span style={{ fontWeight: 800, color: '#0f766e', fontSize: '1.05rem' }}>
+                    {item.tipo === 'In regalo' || item.prezzo === 0
+                      ? 'IN REGALO'
+                      : item.prezzo != null
+                      ? `€ ${item.prezzo}${item.tipo === 'A noleggio' ? '/gg' : ''}`
+                      : item.tipo || 'In vendita'}
+                  </span>
+                )}
+              </div>
+
+              <p style={{ margin: '10px 0 14px', color: '#334155', fontSize: '0.92rem', lineHeight: 1.55 }}>
+                {descrizionePulita}
+              </p>
+
+              {pagamentiItem.length > 0 && (
+                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '12px', marginBottom: '14px' }}>
+                  <div style={{ fontSize: '0.78rem', fontWeight: 800, color: '#1b365d', marginBottom: '6px' }}>
+                    Pagamenti accettati:
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                    {pagamentiItem.map((p) => (
+                      <span
+                        key={p}
+                        style={{
+                          fontSize: '0.74rem',
+                          fontWeight: 700,
+                          background: /cripto/i.test(p) ? '#fef3c7' : '#fff',
+                          color: /cripto/i.test(p) ? '#92400e' : '#334155',
+                          border: /cripto/i.test(p) ? '1px solid #fde68a' : '1px solid #cbd5e1',
+                          padding: '3px 9px',
+                          borderRadius: '999px',
+                        }}
+                      >
+                        {p}
+                      </span>
+                    ))}
+                  </div>
+                  {pagamentiItem.some((p) => /cripto/i.test(p)) && (
+                    <div style={{ fontSize: '0.74rem', color: '#64748b', marginTop: '8px' }}>
+                      ₿ Per pagamenti in criptovalute concordate sempre rete, token e indirizzo direttamente in chat.
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div
+                style={{
+                  borderTop: '1px solid #e2e8f0',
+                  paddingTop: '12px',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  gap: '10px',
+                }}
+              >
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: '0.88rem', color: '#0f172a' }}>
+                    {item.autore || 'Collega'}
+                  </div>
+                  <div style={{ marginTop: '3px' }}>
+                    {renderStarsInline(statsAutore.media, statsAutore.totale)}
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    onClick={() => togglePreferito(item.id)}
+                    style={{
+                      background: isPreferito ? '#fff1f2' : '#f8fafc',
+                      border: '1px solid #e2e8f0',
+                      borderRadius: '10px',
+                      padding: '8px 12px',
+                      fontSize: '0.82rem',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {isPreferito ? '❤️ Salvato' : '🤍 Preferito'}
+                  </button>
+
+                  {!isOwner && autorePulito && !venduto && (
+                    <button
+                      type="button"
+                      onClick={() => apriChatPrivata(item, autorePulito)}
+                      style={{
+                        background: '#2563eb',
+                        color: '#fff',
+                        border: 'none',
+                        borderRadius: '10px',
+                        padding: '8px 14px',
+                        fontSize: '0.84rem',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {isCercoAiutoCard ? 'Rispondi in chat' : 'Chatta con il collega'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* MODALE PUBBLICA ANNUNCIO / RICHIESTA */}
       {showPublishModal && (
