@@ -324,13 +324,13 @@ function formatPrezzoCard(item) {
     return `€ ${val}${item.tipo === 'A noleggio' ? '/gg' : ''}`;
   }
   return item.tipo || 'In vendita';
-}export default function App() {
+}
+
+export default function App() {
   const INTRO_VIDEO_VERSION = '2026-11-20-v2';
   const introVideoRef = useRef(null);
   const profilePanelRef = useRef(null);
   const waitingWorkerRef = useRef(null);
-  const seenMsgIdsRef = useRef(new Set());
-  const initializedMsgsRef = useRef(false);
   const bersaglioIndexRef = useRef(4);
 
   const [swUpdateAvailable, setSwUpdateAvailable] = useState(false);
@@ -415,9 +415,6 @@ function formatPrezzoCard(item) {
   const [filtroEventoCat, setFiltroEventoCat] = useState('Tutte');
   const [codiceCopiatoId, setCodiceCopiatoId] = useState(null);
   const [schedaAnnuncio, setSchedaAnnuncio] = useState(null);
-  const [notifPermission, setNotifPermission] = useState(
-    typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'unsupported'
-  );
 
   const [userProfile, setUserProfile] = useState(() => {
     try {
@@ -456,7 +453,7 @@ function formatPrezzoCard(item) {
     return () => document.removeEventListener('mousedown', onDown);
   }, [showProfileModal]);
 
-  const [adminPin, setAdminPin] = useState(() => {
+  const [adminPin] = useState(() => {
     try {
       return localStorage.getItem('tracolleghi_admin_pin_v1') || DEFAULT_ADMIN_PIN;
     } catch {
@@ -476,7 +473,7 @@ function formatPrezzoCard(item) {
     }
   });
   const [bulkBadgeText, setBulkBadgeText] = useState('');
-  const [bulkDefaultReparto, setBulkDefaultReparto] = useState(REPARTI_AZIENDA[0]);
+  const [bulkDefaultReparto] = useState(REPARTI_AZIENDA[0]);
   const [singleBadgeForm, setSingleBadgeForm] = useState({ badge: '', nome: '', reparto: REPARTI_AZIENDA[0], email: '' });
   const [adminSearchBadge, setAdminSearchBadge] = useState('');
 
@@ -601,7 +598,7 @@ function formatPrezzoCard(item) {
     });
   }, [eventiZona, filtroEventoCat, ricerca]);
 
-  const [settings, setSettings] = useState(() => {
+  const [settings] = useState(() => {
     try {
       const saved = JSON.parse(localStorage.getItem('tracolleghi_settings_v3')) || {};
       return {
@@ -638,7 +635,7 @@ function formatPrezzoCard(item) {
   }
 
   const [giocoAttivo, setGiocoAttivo] = useState(false);
-  const [giocoFinito, setGiocoFinito] = useState(false);
+  const [, setGiocoFinito] = useState(false);
   const [tempoRimasto, setTempoRimasto] = useState(20);
   const [punteggioGioco, setPunteggioGioco] = useState(0);
   const [cellaBersaglio, setCellaBersaglio] = useState({ index: 4, item: BERSAGLI_GIOCO[0] });
@@ -668,7 +665,9 @@ function formatPrezzoCard(item) {
 
   function toccaCellaGioco(idx) {
     if (!giocoAttivo || idx !== cellaBersaglio.index) return;
-    setPunteggioGioco((p) => Math.max(0, p + cellaBersaglio.item.punti));
+    const nextPts = Math.max(0, punteggioGioco + cellaBersaglio.item.punti);
+    setPunteggioGioco(nextPts);
+    playNotificationSound(settings.suoneria);
     generaBersaglio(idx);
   }
 
@@ -680,6 +679,21 @@ function formatPrezzoCard(item) {
           clearInterval(t);
           setGiocoAttivo(false);
           setGiocoFinito(true);
+          if (punteggioGioco > 0) {
+            const rec = {
+              giocatore: extractBaseName(userProfile.nome) || 'Ospite Pausa',
+              reparto: userProfile.reparto || 'Altro Reparto',
+              punteggio: punteggioGioco,
+            };
+            setClassificaGioco((curr) => {
+              const updated = [rec, ...curr].sort((a, b) => b.punteggio - a.punteggio).slice(0, 30);
+              try {
+                localStorage.setItem('tracolleghi_classifica_v1', JSON.stringify(updated));
+              } catch {}
+              return updated;
+            });
+            supabase.from('punteggi_gioco').insert([rec]).catch(() => {});
+          }
           return 0;
         }
         return prev - 1;
@@ -690,22 +704,7 @@ function formatPrezzoCard(item) {
       clearInterval(t);
       clearInterval(m);
     };
-  }, [giocoAttivo]);
-
-  useEffect(() => {
-    if (!giocoFinito || punteggioGioco <= 0) return;
-    const rec = {
-      giocatore: extractBaseName(userProfile.nome) || 'Ospite Pausa',
-      reparto: userProfile.reparto || 'Altro Reparto',
-      punteggio: punteggioGioco,
-    };
-    const next = [rec, ...classificaGioco].sort((a, b) => b.punteggio - a.punteggio).slice(0, 30);
-    setClassificaGioco(next);
-    try {
-      localStorage.setItem('tracolleghi_classifica_v1', JSON.stringify(next));
-    } catch {}
-    supabase.from('punteggi_gioco').insert([rec]).catch(() => {});
-  }, [giocoFinito]);
+  }, [giocoAttivo, punteggioGioco, userProfile.nome, userProfile.reparto]);
 
   const [annunci, setAnnunci] = useState([]);
   const [filtroCategoria, setFiltroCategoria] = useState('Tutte');
@@ -715,9 +714,9 @@ function formatPrezzoCard(item) {
   const [titolo, setTitolo] = useState('');
   const [descrizione, setDescrizione] = useState('');
   const [prezzo, setPrezzo] = useState('');
-  const [tipoAnnuncio, setTipoAnnuncio] = useState('In vendita');
+  const [tipoAnnuncio] = useState('In vendita');
   const [categoria, setCategoria] = useState('Motori');
-  const [pagamentiAnnuncio, setPagamentiAnnuncio] = useState(settings.pagamentiPreferiti);
+  const [pagamentiAnnuncio] = useState(settings.pagamentiPreferiti);
   const [fotoAnnuncio, setFotoAnnuncio] = useState([]);
   const [loading, setLoading] = useState(false);
   const [errore, setErrore] = useState('');
@@ -727,13 +726,17 @@ function formatPrezzoCard(item) {
   const [nuovoMessaggio, setNuovoMessaggio] = useState('');
 
   async function fetchAnnunci() {
-    const { data, error } = await supabase.from('annunci').select('*').order('created_at', { ascending: false });
-    if (!error && Array.isArray(data)) setAnnunci(data);
+    try {
+      const { data, error } = await supabase.from('annunci').select('*').order('created_at', { ascending: false });
+      if (!error && Array.isArray(data)) setAnnunci(data);
+    } catch {}
   }
 
   async function fetchMessaggi() {
-    const { data, error } = await supabase.from('messaggi').select('*').order('created_at', { ascending: true });
-    if (!error && Array.isArray(data)) setMessaggi(data);
+    try {
+      const { data, error } = await supabase.from('messaggi').select('*').order('created_at', { ascending: true });
+      if (!error && Array.isArray(data)) setMessaggi(data);
+    } catch {}
   }
 
   useEffect(() => {
@@ -784,10 +787,8 @@ function formatPrezzoCard(item) {
     }
     if (sezioneAttiva === 'cerco_aiuto') {
       setCategoria('Cerco / Aiuto');
-      setTipoAnnuncio('Cerco / Mi serve');
     } else if (categoria === 'Cerco / Aiuto') {
       setCategoria('Motori');
-      setTipoAnnuncio('In vendita');
     }
     setShowPublishModal(true);
   }
@@ -824,7 +825,7 @@ function formatPrezzoCard(item) {
         descrizione: `${descrizione.trim()}${tagPag}`,
         prezzo: prezzoNum,
         categoria,
-        tipo: tipoAnnuncio,
+        tipo: isFormCercoAiuto ? 'Cerco / Mi serve' : tipoAnnuncio,
         reparto: userProfile.reparto || '',
         autore: `${extractBaseName(userProfile.nome)}${userProfile.reparto ? ` • ${userProfile.reparto}` : ''}`,
         autore_foto: userProfile.fotoProfilo || '',
@@ -919,6 +920,9 @@ function formatPrezzoCard(item) {
     ]);
     setNuovoMessaggio('');
     await fetchMessaggi();
+    if (settings.notificheAttive) {
+      sendSystemNotification(COMPANY_NAME, `Messaggio inviato a ${destinatario}`, 'tracolleghi-sent');
+    }
   }
 
   const fontHeading = "'Syne', 'Plus Jakarta Sans', sans-serif";
@@ -970,7 +974,9 @@ function formatPrezzoCard(item) {
         </div>
       </article>
     );
-  }return (
+  }
+
+  return (
     <div style={{ minHeight: '100vh', background: '#f8fafc', color: '#0f172a', fontFamily: fontBody }}>
       {showIntroVideo && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 120, background: '#090d16', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}>
